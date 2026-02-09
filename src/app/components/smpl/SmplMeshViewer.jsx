@@ -118,10 +118,12 @@ function SmplMesh({ vertices, faceIndices, color = "#10b981", wireframe = false 
     }
   }, [vertices]);
 
-  // Gentle rotation animation
+  // Gentle rotation animation (preserve X rotation for coordinate system fix)
   useFrame((state) => {
     if (meshRef.current) {
-      // Subtle idle rotation
+      // Keep X rotation at PI (180°) for correct orientation
+      meshRef.current.rotation.x = Math.PI;
+      // Subtle idle Y rotation
       meshRef.current.rotation.y = Math.sin(state.clock.elapsedTime * 0.2) * 0.1;
     }
   });
@@ -129,7 +131,13 @@ function SmplMesh({ vertices, faceIndices, color = "#10b981", wireframe = false 
   if (!vertices) return null;
 
   return (
-    <mesh ref={meshRef} geometry={geometry} castShadow receiveShadow>
+    <mesh
+      ref={meshRef}
+      geometry={geometry}
+      castShadow
+      receiveShadow
+      rotation={[Math.PI, 0, 0]} // Flip 180° around X-axis to correct SMPL coordinate system
+    >
       <meshStandardMaterial
         color={color}
         wireframe={wireframe}
