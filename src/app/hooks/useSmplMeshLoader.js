@@ -125,6 +125,11 @@ export function useSmplFramePreloader(frameUrls, jwtToken = null) {
     setProgress(0);
     setError(null);
 
+    console.log("[useSmplFramePreloader] Starting to load", frameUrls.length, "frames");
+    if (frameUrls.length > 0) {
+      console.log("[useSmplFramePreloader] First URL:", frameUrls[0]);
+    }
+
     const loadedFrames = new Map();
     let loadedCount = 0;
 
@@ -200,13 +205,20 @@ export function useSmplFramePreloader(frameUrls, jwtToken = null) {
 }
 
 /**
- * Utility to generate frame URLs from GCS folder metadata
- * Constructs URLs for the backend SMPL API endpoint
+ * @deprecated DO NOT USE - This function guesses filenames and may produce incorrect results.
+ * Use useFrameFilenames hook instead to fetch actual filenames from the backend.
+ *
+ * This function remains for backwards compatibility but logs a warning.
+ *
  * @param {Object} gcsFolder - GCS folder object with path, frames count, and optional filePrefix
  * @param {string} apiBaseUrl - Base API URL (e.g., http://localhost:5000/api)
  * @returns {string[]} Array of frame URLs
  */
 export function generateFrameUrls(gcsFolder, apiBaseUrl) {
+  console.warn(
+    "[DEPRECATED] generateFrameUrls is deprecated. Use useFrameFilenames hook to fetch actual filenames from the backend instead of guessing."
+  );
+
   if (!gcsFolder || !gcsFolder.path || !gcsFolder.frames) {
     return [];
   }
@@ -221,7 +233,7 @@ export function generateFrameUrls(gcsFolder, apiBaseUrl) {
   const [, userId, sessionId, folder] = pathParts;
 
   // Use filePrefix from gcsFolder if available, otherwise use default
-  // Expected format: "cam_1_track1_entry0_frame" (without frame number)
+  // WARNING: This prefix may be incorrect - always prefer useFrameFilenames
   const filePrefix = gcsFolder.filePrefix || "cam_1_track1_entry0_frame";
 
   // Determine frame number padding (default 4 digits)
