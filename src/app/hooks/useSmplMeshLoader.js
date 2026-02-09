@@ -242,7 +242,7 @@ export function generateFrameUrls(gcsFolder, apiBaseUrl) {
 
 /**
  * Hook to fetch actual frame filenames from the backend
- * More reliable than generating filenames since it uses actual file listing
+ * This is the REQUIRED method for getting frame filenames - never guess or generate filenames
  * @param {string} folderPath - GCS folder path (smpl_data/userId/sessionId/folder)
  * @param {string} apiBaseUrl - Base API URL
  * @param {string} jwtToken - JWT token for authentication
@@ -256,22 +256,28 @@ export function useFrameFilenames(folderPath, apiBaseUrl, jwtToken = null) {
   useEffect(() => {
     if (!folderPath) {
       setFilenames([]);
+      setLoading(false);
+      setError(null);
       return;
     }
 
-    async function fetchFilenames() {
-      setLoading(true);
-      setError(null);
+    // Set loading immediately
+    setLoading(true);
+    setError(null);
+    setFilenames([]); // Clear previous filenames to prevent stale data
 
+    async function fetchFilenames() {
       try {
         // Parse path to get components
         const pathParts = folderPath.split("/");
         if (pathParts.length < 4 || pathParts[0] !== "smpl_data") {
-          throw new Error("Invalid folder path format");
+          throw new Error(`Invalid folder path format: ${folderPath}`);
         }
 
         const [, userId, sessionId, folder] = pathParts;
         const url = `${apiBaseUrl}/trainer-app/smpl/frames/${userId}/${sessionId}/${folder}`;
+
+        console.log("[useFrameFilenames] Fetching filenames from:", url);
 
         const headers = {};
         if (jwtToken) {
@@ -280,17 +286,25 @@ export function useFrameFilenames(folderPath, apiBaseUrl, jwtToken = null) {
 
         const response = await fetch(url, { headers });
         if (!response.ok) {
-          throw new Error(`Failed to fetch filenames: ${response.status}`);
+          const errorText = await response.text();
+          throw new Error(`Failed to fetch filenames: ${response.status} - ${errorText}`);
         }
 
         const data = await response.json();
-        if (data.success && data.data.files) {
+
+        if (data.success && data.data.files && Array.isArray(data.data.files)) {
+          console.log("[useFrameFilenames] Received", data.data.files.length, "files from backend");
+          if (data.data.files.length > 0) {
+            console.log("[useFrameFilenames] First file:", data.data.files[0]);
+            console.log("[useFrameFilenames] Last file:", data.data.files[data.data.files.length - 1]);
+          }
           setFilenames(data.data.files);
         } else {
+          console.warn("[useFrameFilenames] No files in response:", data);
           setFilenames([]);
         }
       } catch (err) {
-        console.error("Error fetching frame filenames:", err);
+        console.error("[useFrameFilenames] Error fetching frame filenames:", err);
         setError(err.message);
         setFilenames([]);
       } finally {

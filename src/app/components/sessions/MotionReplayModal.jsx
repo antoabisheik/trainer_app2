@@ -214,19 +214,34 @@ export default function MotionReplayModal({
     jwtToken
   );
 
-  // Build frame URLs from actual filenames
+  // Build frame URLs from actual filenames fetched from backend
+  // IMPORTANT: Never generate/guess filenames - always use actual filenames from useFrameFilenames
   const frameUrls = useMemo(() => {
-    if (!currentFolder?.path || frameFiles.length === 0) return [];
+    if (!currentFolder?.path) {
+      console.log("[MotionReplayModal] No folder path, returning empty URLs");
+      return [];
+    }
+
+    if (frameFiles.length === 0) {
+      console.log("[MotionReplayModal] No frame files loaded yet, returning empty URLs");
+      return [];
+    }
 
     // Parse the GCS path: smpl_data/userId/sessionId/folderName
     const pathParts = currentFolder.path.split("/");
     if (pathParts.length < 4 || pathParts[0] !== "smpl_data") {
+      console.error("[MotionReplayModal] Invalid folder path format:", currentFolder.path);
       return [];
     }
 
     const [, userId, sessionId, folder] = pathParts;
 
+    console.log("[MotionReplayModal] Building URLs from", frameFiles.length, "actual filenames");
+    console.log("[MotionReplayModal] First filename:", frameFiles[0]);
+    console.log("[MotionReplayModal] Folder:", folder);
+
     // Build URLs from actual filenames returned by backend
+    // These filenames come directly from Firebase Storage listing, not generated
     return frameFiles.map(
       (filename) =>
         `${storageBaseUrl}/trainer-app/smpl/frame/${userId}/${sessionId}/${folder}/${filename}`

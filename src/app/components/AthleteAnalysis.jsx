@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useMemo } from "react";
 import {
-  FiChevronDown, FiChevronUp, FiActivity, FiTarget, FiTrendingUp,
-  FiUser, FiCalendar, FiArrowUp, FiArrowDown, FiChevronLeft, FiChevronRight,
-  FiZap, FiPercent, FiSearch,
+  FiActivity, FiTarget, FiUser, FiCalendar, FiArrowUp, FiArrowDown,
+  FiChevronLeft, FiChevronRight, FiZap, FiPercent, FiSearch,
 } from "react-icons/fi";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
@@ -73,8 +72,9 @@ function MetricCard({ title, value, previousValue, unit = "", sparklineData, ico
   );
 }
 
-// Radar Chart for Muscle Distribution
-function RadarChart({ data, size = 220 }) {
+// Interactive Radar Chart for Muscle Distribution
+function RadarChart({ data, size = 220, selectedMuscle, onMuscleSelect }) {
+  const [hoveredMuscle, setHoveredMuscle] = useState(null);
   const center = size / 2;
   const radius = size / 2 - 35;
 
@@ -94,14 +94,45 @@ function RadarChart({ data, size = 220 }) {
     return { x: center + r * Math.cos(angle), y: center + r * Math.sin(angle) };
   });
 
+  // Create sector paths for click areas
+  const getSectorPath = (index) => {
+    const startAngle = index * angleStep - Math.PI / 2 - angleStep / 2;
+    const endAngle = startAngle + angleStep;
+    const outerRadius = radius + 25;
+
+    const x1 = center + outerRadius * Math.cos(startAngle);
+    const y1 = center + outerRadius * Math.sin(startAngle);
+    const x2 = center + outerRadius * Math.cos(endAngle);
+    const y2 = center + outerRadius * Math.sin(endAngle);
+
+    return `M ${center} ${center} L ${x1} ${y1} A ${outerRadius} ${outerRadius} 0 0 1 ${x2} ${y2} Z`;
+  };
+
   const polygonPath = points.map((p, i) => `${i === 0 ? "M" : "L"} ${p.x} ${p.y}`).join(" ") + " Z";
   const gridLevels = [0.25, 0.5, 0.75, 1];
 
   return (
     <svg width={size} height={size} className="mx-auto">
+      {/* Clickable sectors (invisible, for interaction) */}
+      {muscleGroups.map((muscle, i) => (
+        <path
+          key={`sector-${muscle}`}
+          d={getSectorPath(i)}
+          fill={selectedMuscle === muscle ? "rgba(16, 185, 129, 0.1)" : hoveredMuscle === muscle ? "rgba(16, 185, 129, 0.05)" : "transparent"}
+          stroke="none"
+          className="cursor-pointer transition-all duration-200"
+          onClick={() => onMuscleSelect && onMuscleSelect(selectedMuscle === muscle ? null : muscle)}
+          onMouseEnter={() => setHoveredMuscle(muscle)}
+          onMouseLeave={() => setHoveredMuscle(null)}
+        />
+      ))}
+
+      {/* Grid circles */}
       {gridLevels.map((level) => (
         <circle key={level} cx={center} cy={center} r={radius * level} fill="none" stroke="#e5e7eb" strokeWidth="1" />
       ))}
+
+      {/* Axis lines and labels */}
       {muscleGroups.map((muscle, i) => {
         const angle = i * angleStep - Math.PI / 2;
         const x2 = center + radius * Math.cos(angle);
@@ -109,120 +140,714 @@ function RadarChart({ data, size = 220 }) {
         const labelX = center + (radius + 20) * Math.cos(angle);
         const labelY = center + (radius + 20) * Math.sin(angle);
         const value = values[i];
+        const isSelected = selectedMuscle === muscle;
+        const isHovered = hoveredMuscle === muscle;
+
         return (
-          <g key={muscle}>
-            <line x1={center} y1={center} x2={x2} y2={y2} stroke="#e5e7eb" strokeWidth="1" />
-            <text x={labelX} y={labelY} textAnchor="middle" dominantBaseline="middle" className="text-xs fill-gray-500 font-medium">
+          <g key={muscle} className="cursor-pointer" onClick={() => onMuscleSelect && onMuscleSelect(selectedMuscle === muscle ? null : muscle)}>
+            <line x1={center} y1={center} x2={x2} y2={y2} stroke={isSelected ? "#10b981" : "#e5e7eb"} strokeWidth={isSelected ? "2" : "1"} />
+            <text
+              x={labelX}
+              y={labelY}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className={`text-xs font-medium transition-colors ${isSelected ? "fill-emerald-600" : isHovered ? "fill-emerald-500" : "fill-gray-500"}`}
+            >
               {muscle}
             </text>
             {value > 0 && (
-              <text x={labelX} y={labelY + 14} textAnchor="middle" dominantBaseline="middle" className="text-xs fill-emerald-600 font-bold">
+              <text
+                x={labelX}
+                y={labelY + 14}
+                textAnchor="middle"
+                dominantBaseline="middle"
+                className={`text-xs font-bold ${isSelected ? "fill-emerald-700" : "fill-emerald-600"}`}
+              >
                 {value.toFixed(0)}%
               </text>
             )}
           </g>
         );
       })}
+
+      {/* Data polygon */}
       <path d={polygonPath} fill="rgba(16, 185, 129, 0.2)" stroke="#10b981" strokeWidth="2.5" />
-      {points.map((p, i) => (
-        <circle key={i} cx={p.x} cy={p.y} r="4" fill="#10b981" stroke="white" strokeWidth="2" />
-      ))}
+
+      {/* Data points */}
+      {points.map((p, i) => {
+        const isSelected = selectedMuscle === muscleGroups[i];
+        return (
+          <circle
+            key={i}
+            cx={p.x}
+            cy={p.y}
+            r={isSelected ? 6 : 4}
+            fill={isSelected ? "#059669" : "#10b981"}
+            stroke="white"
+            strokeWidth="2"
+            className="cursor-pointer transition-all duration-200"
+            onClick={() => onMuscleSelect && onMuscleSelect(selectedMuscle === muscleGroups[i] ? null : muscleGroups[i])}
+          />
+        );
+      })}
     </svg>
   );
 }
 
-// Timeline Chart
-function TimelineChart({ data, height = 160 }) {
+// Pie Chart for Exercise Distribution
+function ExercisePieChart({ exercises, size = 200 }) {
   const [hoveredIndex, setHoveredIndex] = useState(null);
-  if (!data || data.length === 0) return null;
 
-  const maxReps = Math.max(...data.map(d => d.totalReps || 0));
-  const padding = { top: 20, right: 20, bottom: 30, left: 40 };
-  const width = 500;
-  const chartWidth = width - padding.left - padding.right;
-  const chartHeight = height - padding.top - padding.bottom;
+  if (!exercises || exercises.length === 0) return null;
 
-  const getX = (i) => padding.left + (i / (data.length - 1)) * chartWidth;
-  const getY = (value) => padding.top + chartHeight - (value / (maxReps || 1)) * chartHeight;
+  const center = size / 2;
+  const radius = size / 2 - 30;
+  const innerRadius = radius * 0.5; // Donut style
 
-  const linePath = data.map((d, i) => `${i === 0 ? "M" : "L"} ${getX(i)} ${getY(d.totalReps || 0)}`).join(" ");
-  const areaPath = linePath + ` L ${getX(data.length - 1)} ${padding.top + chartHeight} L ${padding.left} ${padding.top + chartHeight} Z`;
+  // Calculate total and percentages
+  const total = exercises.reduce((sum, ex) => sum + ex.totalSets, 0);
+
+  // Colors for pie slices
+  const colors = [
+    "#10b981", "#059669", "#047857", "#065f46", "#064e3b",
+    "#34d399", "#6ee7b7", "#a7f3d0", "#d1fae5", "#ecfdf5"
+  ];
+
+  let currentAngle = -Math.PI / 2; // Start from top
+
+  const slices = exercises.map((ex, i) => {
+    const percentage = (ex.totalSets / total) * 100;
+    const sliceAngle = (percentage / 100) * 2 * Math.PI;
+    const startAngle = currentAngle;
+    const endAngle = currentAngle + sliceAngle;
+    currentAngle = endAngle;
+
+    const x1 = center + radius * Math.cos(startAngle);
+    const y1 = center + radius * Math.sin(startAngle);
+    const x2 = center + radius * Math.cos(endAngle);
+    const y2 = center + radius * Math.sin(endAngle);
+
+    const ix1 = center + innerRadius * Math.cos(startAngle);
+    const iy1 = center + innerRadius * Math.sin(startAngle);
+    const ix2 = center + innerRadius * Math.cos(endAngle);
+    const iy2 = center + innerRadius * Math.sin(endAngle);
+
+    const largeArc = sliceAngle > Math.PI ? 1 : 0;
+
+    // Path for donut slice
+    const path = `
+      M ${x1} ${y1}
+      A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2}
+      L ${ix2} ${iy2}
+      A ${innerRadius} ${innerRadius} 0 ${largeArc} 0 ${ix1} ${iy1}
+      Z
+    `;
+
+    // Label position
+    const midAngle = startAngle + sliceAngle / 2;
+    const labelRadius = radius + 15;
+    const labelX = center + labelRadius * Math.cos(midAngle);
+    const labelY = center + labelRadius * Math.sin(midAngle);
+
+    return {
+      path,
+      color: colors[i % colors.length],
+      exercise: ex,
+      percentage,
+      labelX,
+      labelY,
+      midAngle,
+    };
+  });
 
   return (
     <div className="relative">
-      <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
-        {[0, 0.5, 1].map((pct) => (
-          <line key={pct} x1={padding.left} y1={padding.top + chartHeight * (1 - pct)} x2={width - padding.right} y2={padding.top + chartHeight * (1 - pct)} stroke="#f3f4f6" strokeWidth="1" />
+      <svg width={size} height={size} className="mx-auto overflow-visible">
+        {slices.map((slice, i) => (
+          <g key={i}>
+            <path
+              d={slice.path}
+              fill={slice.color}
+              stroke="white"
+              strokeWidth="2"
+              className={`cursor-pointer transition-all duration-200 ${hoveredIndex === i ? "opacity-80" : ""}`}
+              style={{ transform: hoveredIndex === i ? `scale(1.03)` : "scale(1)", transformOrigin: `${center}px ${center}px` }}
+              onMouseEnter={() => setHoveredIndex(i)}
+              onMouseLeave={() => setHoveredIndex(null)}
+            />
+          </g>
         ))}
-        <path d={areaPath} fill="url(#greenGradient)" />
-        <path d={linePath} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinecap="round" />
-        {data.map((d, i) => (
-          <circle key={i} cx={getX(i)} cy={getY(d.totalReps || 0)} r={hoveredIndex === i ? 6 : 4} fill="#10b981" stroke="white" strokeWidth="2" className="cursor-pointer" onMouseEnter={() => setHoveredIndex(i)} onMouseLeave={() => setHoveredIndex(null)} />
-        ))}
-        {data.filter((_, i) => i % Math.ceil(data.length / 5) === 0 || i === data.length - 1).map((d) => {
-          const originalIndex = data.indexOf(d);
-          return (
-            <text key={originalIndex} x={getX(originalIndex)} y={height - 6} textAnchor="middle" className="text-xs fill-gray-400">
-              {d.date?.slice(5) || ""}
-            </text>
-          );
-        })}
-        <defs>
-          <linearGradient id="greenGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10b981" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-          </linearGradient>
-        </defs>
+
+        {/* Center text */}
+        <text x={center} y={center - 8} textAnchor="middle" className="text-2xl font-bold fill-gray-900">
+          {total}
+        </text>
+        <text x={center} y={center + 12} textAnchor="middle" className="text-xs fill-gray-500">
+          total sets
+        </text>
       </svg>
-      {hoveredIndex !== null && data[hoveredIndex] && (
-        <div className="absolute bg-gray-900 text-white text-xs rounded-lg px-3 py-2 pointer-events-none z-10" style={{ left: `${(hoveredIndex / (data.length - 1)) * 100}%`, top: "0", transform: "translateX(-50%)" }}>
-          <p className="font-medium">{data[hoveredIndex].date}</p>
-          <p>{data[hoveredIndex].totalReps} reps · {data[hoveredIndex].completionRate?.toFixed(0)}%</p>
+
+      {/* Tooltip */}
+      {hoveredIndex !== null && slices[hoveredIndex] && (
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full bg-gray-900 text-white text-xs rounded-lg px-3 py-2 pointer-events-none z-10 whitespace-nowrap">
+          <p className="font-medium">{slices[hoveredIndex].exercise.name}</p>
+          <p>{slices[hoveredIndex].exercise.totalSets} sets ({slices[hoveredIndex].percentage.toFixed(1)}%)</p>
         </div>
       )}
     </div>
   );
 }
 
-// Muscle Accordion
-function MuscleAccordion({ muscle, exercises }) {
-  const [open, setOpen] = useState(false);
-  const totalSets = exercises.reduce((sum, ex) => sum + ex.totalSets, 0);
-  const totalReps = exercises.reduce((sum, ex) => sum + ex.totalReps, 0);
+// Exercise Legend for Pie Chart
+function ExerciseLegend({ exercises }) {
+  const colors = [
+    "#10b981", "#059669", "#047857", "#065f46", "#064e3b",
+    "#34d399", "#6ee7b7", "#a7f3d0", "#d1fae5", "#ecfdf5"
+  ];
+
+  const total = exercises.reduce((sum, ex) => sum + ex.totalSets, 0);
 
   return (
-    <div className="border border-gray-100 rounded-xl overflow-hidden">
-      <button onClick={() => setOpen(!open)} className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-50 transition-colors">
-        <div className="flex items-center gap-3">
-          <span className="font-medium text-base text-gray-800">{muscle}</span>
-          <span className="text-xs text-gray-400">{exercises.length} exercises</span>
+    <div className="space-y-2 max-h-48 overflow-y-auto">
+      {exercises.map((ex, i) => {
+        const percentage = ((ex.totalSets / total) * 100).toFixed(1);
+        return (
+          <div key={i} className="flex items-center gap-2">
+            <div
+              className="w-3 h-3 rounded-full shrink-0"
+              style={{ backgroundColor: colors[i % colors.length] }}
+            />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm text-gray-700 truncate">{ex.name}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <span className="text-sm font-medium text-gray-900">{ex.totalSets}s</span>
+              <span className="text-xs text-gray-400 ml-1">({percentage}%)</span>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Muscle Filter Chips
+function MuscleFilterChips({ muscles, selectedMuscle, onSelect }) {
+  const muscleGroups = ["Arms", "Chest", "Legs", "Back", "Shoulders", "Core"];
+
+  // Get muscles that have data
+  const availableMuscles = muscleGroups.filter(muscle =>
+    muscles.some(m => m.muscleName === muscle && m.count > 0)
+  );
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {availableMuscles.map((muscle) => {
+        const muscleData = muscles.find(m => m.muscleName === muscle);
+        const isSelected = selectedMuscle === muscle;
+
+        return (
+          <button
+            key={muscle}
+            onClick={() => onSelect(isSelected ? null : muscle)}
+            className={`px-3 py-1.5 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1.5 ${
+              isSelected
+                ? "bg-emerald-600 text-white shadow-sm"
+                : "bg-gray-100 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700"
+            }`}
+          >
+            {muscle}
+            {muscleData && (
+              <span className={`text-xs ${isSelected ? "text-emerald-100" : "text-gray-400"}`}>
+                {muscleData.count}
+              </span>
+            )}
+          </button>
+        );
+      })}
+
+      {selectedMuscle && (
+        <button
+          onClick={() => onSelect(null)}
+          className="px-3 py-1.5 rounded-full text-sm font-medium bg-red-50 text-red-600 hover:bg-red-100 transition-all duration-200"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+}
+
+// Interactive Training Intensity Chart with Bar + Line combo
+function TrainingIntensityChart({ data, height = 200 }) {
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+  const [viewMode, setViewMode] = useState("combo"); // "combo", "bars", "line"
+
+  if (!data || data.length === 0) return null;
+
+  const padding = { top: 30, right: 50, bottom: 40, left: 50 };
+  const width = 600;
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+
+  const maxReps = Math.max(...data.map(d => d.totalReps || 0));
+  const maxCompletion = 100;
+
+  // Calculate bar width with gap
+  const barWidth = Math.min(30, (chartWidth / data.length) * 0.6);
+  const barGap = (chartWidth - barWidth * data.length) / (data.length + 1);
+
+  const getBarX = (i) => padding.left + barGap + i * (barWidth + barGap);
+  const getLineX = (i) => padding.left + barGap + i * (barWidth + barGap) + barWidth / 2;
+  const getCompletionY = (value) => padding.top + chartHeight - (value / maxCompletion) * chartHeight;
+
+  // Line path for completion rate
+  const completionPath = data.map((d, i) =>
+    `${i === 0 ? "M" : "L"} ${getLineX(i)} ${getCompletionY(d.completionRate || 0)}`
+  ).join(" ");
+
+  // Calculate averages
+  const avgReps = Math.round(data.reduce((sum, d) => sum + (d.totalReps || 0), 0) / data.length);
+  const avgCompletion = (data.reduce((sum, d) => sum + (d.completionRate || 0), 0) / data.length).toFixed(1);
+
+  return (
+    <div className="space-y-3">
+      {/* Chart Controls */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setViewMode("combo")}
+            className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${viewMode === "combo" ? "bg-emerald-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          >
+            Combo
+          </button>
+          <button
+            onClick={() => setViewMode("bars")}
+            className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${viewMode === "bars" ? "bg-emerald-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          >
+            Bars
+          </button>
+          <button
+            onClick={() => setViewMode("line")}
+            className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${viewMode === "line" ? "bg-emerald-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+          >
+            Line
+          </button>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-sm text-emerald-600 font-medium">{totalSets}s / {totalReps}r</span>
-          {open ? <FiChevronUp className="text-gray-400 w-4 h-4" /> : <FiChevronDown className="text-gray-400 w-4 h-4" />}
+        <div className="flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded bg-emerald-500" />
+            <span className="text-gray-600">Reps</span>
+            <span className="font-medium text-gray-900">avg: {avgReps}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded-full bg-amber-500" />
+            <span className="text-gray-600">Completion</span>
+            <span className="font-medium text-gray-900">avg: {avgCompletion}%</span>
+          </div>
         </div>
-      </button>
-      {open && (
-        <div className="px-4 pb-3 space-y-2">
-          {exercises.map((ex, i) => {
-            const maxSets = Math.max(...exercises.map((e) => e.totalSets));
-            const barWidth = (ex.totalSets / maxSets) * 100;
+      </div>
+
+      {/* Chart */}
+      <div className="relative">
+        <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+          <defs>
+            <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" />
+              <stop offset="100%" stopColor="#059669" />
+            </linearGradient>
+            <linearGradient id="lineGradientFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#f59e0b" stopOpacity="0" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines */}
+          {[0, 0.25, 0.5, 0.75, 1].map((pct) => (
+            <g key={pct}>
+              <line
+                x1={padding.left}
+                y1={padding.top + chartHeight * (1 - pct)}
+                x2={width - padding.right}
+                y2={padding.top + chartHeight * (1 - pct)}
+                stroke="#f3f4f6"
+                strokeWidth="1"
+              />
+              {/* Left axis labels (Reps) */}
+              <text
+                x={padding.left - 8}
+                y={padding.top + chartHeight * (1 - pct)}
+                textAnchor="end"
+                dominantBaseline="middle"
+                className="text-xs fill-gray-400"
+              >
+                {Math.round(maxReps * pct)}
+              </text>
+              {/* Right axis labels (Completion %) */}
+              {(viewMode === "combo" || viewMode === "line") && (
+                <text
+                  x={width - padding.right + 8}
+                  y={padding.top + chartHeight * (1 - pct)}
+                  textAnchor="start"
+                  dominantBaseline="middle"
+                  className="text-xs fill-amber-500"
+                >
+                  {Math.round(100 * pct)}%
+                </text>
+              )}
+            </g>
+          ))}
+
+          {/* Bars */}
+          {(viewMode === "combo" || viewMode === "bars") && data.map((d, i) => {
+            const barHeight = ((d.totalReps || 0) / (maxReps || 1)) * chartHeight;
+            const isHovered = hoveredIndex === i;
+
             return (
-              <div key={i} className="flex items-center gap-3">
-                <div className="flex-1">
-                  <div className="flex justify-between text-sm mb-1">
-                    <span className="text-gray-700">{ex.name}</span>
-                    <span className="text-gray-400">{ex.totalSets}s / {ex.totalReps}r</span>
-                  </div>
-                  <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${barWidth}%` }} />
-                  </div>
-                </div>
-              </div>
+              <g key={`bar-${i}`}>
+                <rect
+                  x={getBarX(i)}
+                  y={padding.top + chartHeight - barHeight}
+                  width={barWidth}
+                  height={barHeight}
+                  fill="url(#barGradient)"
+                  rx="4"
+                  className={`cursor-pointer transition-opacity duration-200 ${isHovered ? "opacity-100" : "opacity-80"}`}
+                  onMouseEnter={() => setHoveredIndex(i)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                />
+                {isHovered && (
+                  <rect
+                    x={getBarX(i) - 2}
+                    y={padding.top + chartHeight - barHeight - 2}
+                    width={barWidth + 4}
+                    height={barHeight + 4}
+                    fill="none"
+                    stroke="#10b981"
+                    strokeWidth="2"
+                    rx="5"
+                  />
+                )}
+              </g>
             );
           })}
+
+          {/* Line for completion rate */}
+          {(viewMode === "combo" || viewMode === "line") && (
+            <>
+              {/* Area fill under line */}
+              <path
+                d={`${completionPath} L ${getLineX(data.length - 1)} ${padding.top + chartHeight} L ${getLineX(0)} ${padding.top + chartHeight} Z`}
+                fill="url(#lineGradientFill)"
+              />
+              {/* Line */}
+              <path
+                d={completionPath}
+                fill="none"
+                stroke="#f59e0b"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {/* Data points */}
+              {data.map((d, i) => (
+                <circle
+                  key={`point-${i}`}
+                  cx={getLineX(i)}
+                  cy={getCompletionY(d.completionRate || 0)}
+                  r={hoveredIndex === i ? 6 : 4}
+                  fill="#f59e0b"
+                  stroke="white"
+                  strokeWidth="2"
+                  className="cursor-pointer"
+                  onMouseEnter={() => setHoveredIndex(i)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                />
+              ))}
+            </>
+          )}
+
+          {/* X-axis labels */}
+          {data.map((d, i) => {
+            // Show every nth label to avoid crowding
+            const showLabel = i % Math.ceil(data.length / 7) === 0 || i === data.length - 1;
+            if (!showLabel) return null;
+
+            return (
+              <text
+                key={`label-${i}`}
+                x={getLineX(i)}
+                y={height - 10}
+                textAnchor="middle"
+                className="text-xs fill-gray-400"
+              >
+                {d.date?.slice(5) || ""}
+              </text>
+            );
+          })}
+
+          {/* Hover indicator line */}
+          {hoveredIndex !== null && (
+            <line
+              x1={getLineX(hoveredIndex)}
+              y1={padding.top}
+              x2={getLineX(hoveredIndex)}
+              y2={padding.top + chartHeight}
+              stroke="#e5e7eb"
+              strokeWidth="1"
+              strokeDasharray="4"
+            />
+          )}
+        </svg>
+
+        {/* Tooltip */}
+        {hoveredIndex !== null && data[hoveredIndex] && (
+          <div
+            className="absolute bg-gray-900 text-white text-xs rounded-lg px-3 py-2 pointer-events-none z-10 shadow-lg"
+            style={{
+              left: `${((getLineX(hoveredIndex) - padding.left) / chartWidth) * 100}%`,
+              top: "-10px",
+              transform: "translateX(-50%)"
+            }}
+          >
+            <p className="font-semibold text-emerald-400">{data[hoveredIndex].date}</p>
+            <div className="flex items-center gap-3 mt-1">
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded bg-emerald-400" />
+                {data[hoveredIndex].totalReps} reps
+              </span>
+              <span className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                {data[hoveredIndex].completionRate?.toFixed(0)}%
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Interactive Weekly Progress Chart
+function WeeklyProgressChart({ data, height = 180 }) {
+  const [hoveredIndex, setHoveredIndex] = useState(null);
+  const [showComparison, setShowComparison] = useState(true);
+
+  if (!data || data.length === 0) return null;
+
+  // Get last 8 weeks max
+  const weeks = data.slice(-8);
+
+  const padding = { top: 20, right: 20, bottom: 50, left: 50 };
+  const width = 600;
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+
+  const maxReps = Math.max(...weeks.map(w => w.completedReps || 0));
+  const maxSessions = Math.max(...weeks.map(w => w.sessions || 0));
+
+  const barWidth = Math.min(50, (chartWidth / weeks.length) * 0.7);
+  const barGap = (chartWidth - barWidth * weeks.length) / (weeks.length + 1);
+
+  const getX = (i) => padding.left + barGap + i * (barWidth + barGap);
+
+  // Calculate week-over-week changes
+  const getChange = (current, previous) => {
+    if (!previous || previous === 0) return null;
+    return ((current - previous) / previous * 100).toFixed(0);
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Toggle */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4 text-xs">
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded bg-emerald-500" />
+            <span className="text-gray-600">Reps Completed</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <div className="w-3 h-3 rounded bg-blue-500" />
+            <span className="text-gray-600">Sessions</span>
+          </div>
         </div>
-      )}
+        <button
+          onClick={() => setShowComparison(!showComparison)}
+          className={`px-3 py-1 text-xs font-medium rounded-lg transition-colors ${showComparison ? "bg-emerald-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}
+        >
+          {showComparison ? "Hide" : "Show"} Changes
+        </button>
+      </div>
+
+      {/* Chart */}
+      <div className="relative">
+        <svg width="100%" viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
+          <defs>
+            <linearGradient id="weekBarGradient" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#10b981" />
+              <stop offset="100%" stopColor="#047857" />
+            </linearGradient>
+          </defs>
+
+          {/* Grid lines */}
+          {[0, 0.5, 1].map((pct) => (
+            <g key={pct}>
+              <line
+                x1={padding.left}
+                y1={padding.top + chartHeight * (1 - pct)}
+                x2={width - padding.right}
+                y2={padding.top + chartHeight * (1 - pct)}
+                stroke="#f3f4f6"
+                strokeWidth="1"
+              />
+              <text
+                x={padding.left - 8}
+                y={padding.top + chartHeight * (1 - pct)}
+                textAnchor="end"
+                dominantBaseline="middle"
+                className="text-xs fill-gray-400"
+              >
+                {Math.round(maxReps * pct)}
+              </text>
+            </g>
+          ))}
+
+          {/* Bars */}
+          {weeks.map((week, i) => {
+            const barHeight = ((week.completedReps || 0) / (maxReps || 1)) * chartHeight;
+            const sessionHeight = ((week.sessions || 0) / (maxSessions || 1)) * chartHeight * 0.3;
+            const isHovered = hoveredIndex === i;
+            const prevWeek = i > 0 ? weeks[i - 1] : null;
+            const change = getChange(week.completedReps, prevWeek?.completedReps);
+
+            const weekDate = new Date(week.weekStart);
+            const weekLabel = weekDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+            return (
+              <g key={i}>
+                {/* Main bar (reps) */}
+                <rect
+                  x={getX(i)}
+                  y={padding.top + chartHeight - barHeight}
+                  width={barWidth}
+                  height={barHeight}
+                  fill="url(#weekBarGradient)"
+                  rx="4"
+                  className={`cursor-pointer transition-all duration-200 ${isHovered ? "filter brightness-110" : ""}`}
+                  onMouseEnter={() => setHoveredIndex(i)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                />
+
+                {/* Sessions indicator (small bar on top) */}
+                <rect
+                  x={getX(i) + barWidth * 0.3}
+                  y={padding.top + chartHeight - barHeight - sessionHeight - 4}
+                  width={barWidth * 0.4}
+                  height={sessionHeight}
+                  fill="#3b82f6"
+                  rx="2"
+                  className="cursor-pointer"
+                  onMouseEnter={() => setHoveredIndex(i)}
+                  onMouseLeave={() => setHoveredIndex(null)}
+                />
+
+                {/* Week label */}
+                <text
+                  x={getX(i) + barWidth / 2}
+                  y={height - 25}
+                  textAnchor="middle"
+                  className="text-xs fill-gray-500 font-medium"
+                >
+                  {weekLabel}
+                </text>
+
+                {/* Reps value on bar */}
+                {isHovered && (
+                  <text
+                    x={getX(i) + barWidth / 2}
+                    y={padding.top + chartHeight - barHeight - sessionHeight - 12}
+                    textAnchor="middle"
+                    className="text-xs fill-gray-700 font-bold"
+                  >
+                    {week.completedReps.toLocaleString()}
+                  </text>
+                )}
+
+                {/* Change indicator */}
+                {showComparison && change && (
+                  <g>
+                    <rect
+                      x={getX(i) + barWidth / 2 - 16}
+                      y={height - 18}
+                      width={32}
+                      height={16}
+                      rx="4"
+                      fill={parseFloat(change) >= 0 ? "#d1fae5" : "#fee2e2"}
+                    />
+                    <text
+                      x={getX(i) + barWidth / 2}
+                      y={height - 7}
+                      textAnchor="middle"
+                      className={`text-xs font-medium ${parseFloat(change) >= 0 ? "fill-emerald-700" : "fill-red-700"}`}
+                    >
+                      {parseFloat(change) >= 0 ? "+" : ""}{change}%
+                    </text>
+                  </g>
+                )}
+
+                {/* Hover highlight */}
+                {isHovered && (
+                  <rect
+                    x={getX(i) - 3}
+                    y={padding.top}
+                    width={barWidth + 6}
+                    height={chartHeight}
+                    fill="rgba(16, 185, 129, 0.05)"
+                    rx="4"
+                  />
+                )}
+              </g>
+            );
+          })}
+
+          {/* Trend line connecting bar tops */}
+          <path
+            d={weeks.map((week, i) => {
+              const barHeight = ((week.completedReps || 0) / (maxReps || 1)) * chartHeight;
+              const x = getX(i) + barWidth / 2;
+              const y = padding.top + chartHeight - barHeight;
+              return `${i === 0 ? "M" : "L"} ${x} ${y}`;
+            }).join(" ")}
+            fill="none"
+            stroke="#10b981"
+            strokeWidth="2"
+            strokeDasharray="4"
+            opacity="0.5"
+          />
+        </svg>
+
+        {/* Tooltip */}
+        {hoveredIndex !== null && weeks[hoveredIndex] && (
+          <div
+            className="absolute bg-gray-900 text-white text-xs rounded-lg px-3 py-2 pointer-events-none z-10 shadow-lg"
+            style={{
+              left: `${((getX(hoveredIndex) + barWidth / 2 - padding.left) / chartWidth) * 100}%`,
+              top: "-10px",
+              transform: "translateX(-50%)"
+            }}
+          >
+            <p className="font-semibold text-emerald-400">
+              Week of {new Date(weeks[hoveredIndex].weekStart).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+            </p>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+              <span className="text-gray-400">Reps:</span>
+              <span className="font-medium">{weeks[hoveredIndex].completedReps.toLocaleString()}</span>
+              <span className="text-gray-400">Sessions:</span>
+              <span className="font-medium">{weeks[hoveredIndex].sessions}</span>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -339,6 +964,8 @@ function AthletesListView({ athletes, loading, searchTerm, setSearchTerm, onSele
 
 // Analytics Detail View
 function AnalyticsDetailView({ athlete, analytics, loading, error, range, setRange, onBack }) {
+  const [selectedMuscle, setSelectedMuscle] = useState(null);
+
   const ranges = [
     { value: "7d", label: "7D" },
     { value: "30d", label: "30D" },
@@ -461,74 +1088,112 @@ function AnalyticsDetailView({ athlete, analytics, loading, error, range, setRan
 
       {/* Main Content */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
-        {/* Muscle Focus */}
+        {/* Muscle Focus - Interactive Radar */}
         <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-base font-semibold text-gray-900">Muscle Focus</h2>
-            {mostTrainedMuscle && (
+            {mostTrainedMuscle && !selectedMuscle && (
               <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium">
                 Top: {mostTrainedMuscle.muscleName}
               </span>
             )}
+            {selectedMuscle && (
+              <span className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-xs font-medium">
+                {selectedMuscle}
+              </span>
+            )}
           </div>
-          <RadarChart data={analytics.muscleDistribution} size={200} />
-          {analytics.topExercises?.length > 0 && (
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <p className="text-xs font-medium text-gray-500 mb-2">TOP EXERCISES</p>
-              <div className="flex flex-wrap gap-1.5">
-                {analytics.topExercises.slice(0, 4).map((ex, i) => (
-                  <span key={i} className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs">
-                    {ex.name} ({ex.count})
-                  </span>
-                ))}
+          <RadarChart
+            data={analytics.muscleDistribution}
+            size={200}
+            selectedMuscle={selectedMuscle}
+            onMuscleSelect={setSelectedMuscle}
+          />
+          <p className="text-xs text-gray-400 text-center mt-2">Click a muscle to see exercise breakdown</p>
+        </div>
+
+        {/* Exercise Breakdown with Filters and Pie Chart */}
+        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-5">
+          <h2 className="text-base font-semibold text-gray-900 mb-4">Exercise Breakdown</h2>
+
+          {/* Muscle Filter Chips */}
+          <div className="mb-4">
+            <MuscleFilterChips
+              muscles={analytics.muscleDistribution || []}
+              selectedMuscle={selectedMuscle}
+              onSelect={setSelectedMuscle}
+            />
+          </div>
+
+          {/* Content based on selection */}
+          {selectedMuscle && analytics.exercisesByMuscle?.[selectedMuscle] ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Pie Chart */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-3 uppercase">{selectedMuscle} Distribution</p>
+                <ExercisePieChart
+                  exercises={analytics.exercisesByMuscle[selectedMuscle]}
+                  size={180}
+                />
               </div>
+
+              {/* Exercise Legend */}
+              <div>
+                <p className="text-xs font-medium text-gray-500 mb-3 uppercase">Exercises</p>
+                <ExerciseLegend exercises={analytics.exercisesByMuscle[selectedMuscle]} />
+              </div>
+            </div>
+          ) : selectedMuscle ? (
+            <div className="text-center py-8">
+              <p className="text-gray-400 text-base">No exercises found for {selectedMuscle}</p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+              {analytics.topExercises?.length > 0 ? (
+                <>
+                  <p className="text-xs font-medium text-gray-500 mb-2">TOP EXERCISES</p>
+                  {analytics.topExercises.slice(0, 6).map((ex, i) => (
+                    <div key={i} className="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 text-xs font-bold flex items-center justify-center">
+                          {i + 1}
+                        </span>
+                        <span className="text-sm text-gray-700">{ex.name}</span>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-sm font-medium text-emerald-600">{ex.count} sets</span>
+                        <span className="text-xs text-gray-400 ml-2">{ex.muscle}</span>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              ) : (
+                <p className="text-gray-400 text-center py-8 text-base">Select a muscle to see breakdown</p>
+              )}
             </div>
           )}
         </div>
-
-        {/* Exercise Breakdown */}
-        <div className="lg:col-span-3 bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">Exercise Breakdown</h2>
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {Object.entries(analytics.exercisesByMuscle || {}).map(([muscle, exercises]) => (
-              <MuscleAccordion key={muscle} muscle={muscle} exercises={exercises} />
-            ))}
-            {Object.keys(analytics.exercisesByMuscle || {}).length === 0 && (
-              <p className="text-gray-400 text-center py-8 text-base">No exercise data</p>
-            )}
-          </div>
-        </div>
       </div>
 
-      {/* Timeline */}
+      {/* Training Intensity - Interactive Chart */}
       {analytics.intensityTimeline?.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-base font-semibold text-gray-900">Training Intensity</h2>
-            <span className="text-sm text-gray-500">Reps per session</span>
+            <span className="text-xs text-gray-400">Click bars/points for details</span>
           </div>
-          <TimelineChart data={analytics.intensityTimeline} height={140} />
+          <TrainingIntensityChart data={analytics.intensityTimeline} height={200} />
         </div>
       )}
 
-      {/* Weekly Progress */}
+      {/* Weekly Progress - Interactive Bar Chart */}
       {analytics.weeklyProgress?.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <h2 className="text-base font-semibold text-gray-900 mb-4">Weekly Progress</h2>
-          <div className="grid grid-cols-3 md:grid-cols-6 gap-3">
-            {analytics.weeklyProgress.slice(-6).map((week) => {
-              const weekDate = new Date(week.weekStart);
-              return (
-                <div key={week.weekStart} className="p-3 bg-emerald-50 rounded-xl text-center">
-                  <p className="text-xs text-emerald-600 mb-1">
-                    {weekDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900">{week.completedReps.toLocaleString()}</p>
-                  <p className="text-xs text-gray-500 mt-1">{week.sessions} sessions</p>
-                </div>
-              );
-            })}
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-base font-semibold text-gray-900">Weekly Progress</h2>
+            <span className="text-xs text-gray-400">Hover for week-over-week comparison</span>
           </div>
+          <WeeklyProgressChart data={analytics.weeklyProgress} height={200} />
         </div>
       )}
 
