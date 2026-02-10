@@ -5,6 +5,7 @@ import {
   FiActivity, FiTarget, FiUser, FiCalendar, FiArrowUp, FiArrowDown,
   FiChevronLeft, FiChevronRight, FiZap, FiPercent, FiSearch,
 } from "react-icons/fi";
+import verificationApi from "../api/verification-api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -1234,6 +1235,43 @@ export default function AthleteAnalysis({ jwtToken, athletes = [] }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState("");
+  const [athleteNames, setAthleteNames] = useState({});
+
+  // Fetch athlete names
+  useEffect(() => {
+    if (!athletes?.length) return;
+
+    async function fetchNames() {
+      const namesMap = {};
+      await Promise.all(
+        athletes.map(async (athlete) => {
+          const id = athlete.id || athlete.odid;
+          if (id && !athlete.name) {
+            try {
+              const name = await verificationApi.getUserName(id);
+              if (name) namesMap[id] = name;
+            } catch (e) {
+              console.error(`Failed to fetch name for ${id}`, e);
+            }
+          }
+        })
+      );
+      setAthleteNames(namesMap);
+    }
+
+    fetchNames();
+  }, [athletes]);
+
+  // Enrich athletes with fetched names
+  const enrichedAthletes = useMemo(() => {
+    return athletes.map(athlete => {
+      const id = athlete.id || athlete.odid;
+      return {
+        ...athlete,
+        name: athlete.name || athleteNames[id] || null
+      };
+    });
+  }, [athletes, athleteNames]);
 
   useEffect(() => {
     if (!selectedAthlete || !jwtToken) return;
@@ -1268,7 +1306,9 @@ export default function AthleteAnalysis({ jwtToken, athletes = [] }) {
   }, [selectedAthlete, range, jwtToken]);
 
   const handleSelectAthlete = (athlete) => {
-    setSelectedAthlete(athlete);
+    // Find the enriched version
+    const enriched = enrichedAthletes.find(a => a.id === athlete.id) || athlete;
+    setSelectedAthlete(enriched);
     setAnalytics(null);
     setError(null);
   };
@@ -1295,7 +1335,7 @@ export default function AthleteAnalysis({ jwtToken, athletes = [] }) {
 
   return (
     <AthletesListView
-      athletes={athletes}
+      athletes={enrichedAthletes}
       loading={false}
       searchTerm={searchTerm}
       setSearchTerm={setSearchTerm}

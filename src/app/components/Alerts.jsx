@@ -1,11 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { FiAlertTriangle, FiRefreshCw, FiClock, FiActivity } from 'react-icons/fi';
+import verificationApi from '../api/verification-api';
 
 const Alerts = ({ jwtToken }) => {
   const [alerts, setAlerts] = useState([]);
+  const [athleteNames, setAthleteNames] = useState({});
   const [loading, setLoading] = useState(true);
   const [timeLastChecked, setTimeLastChecked] = useState(null);
 
@@ -34,8 +36,26 @@ const Alerts = ({ jwtToken }) => {
       }
 
       const data = await response.json();
-      setAlerts(data.data || []);
+      const fetchedAlerts = data.data || [];
+      setAlerts(fetchedAlerts);
       setTimeLastChecked(new Date());
+
+      // Fetch names for all athletes in alerts
+      if (fetchedAlerts.length > 0) {
+        const uniqueUserIds = [...new Set(fetchedAlerts.map(a => a.userId).filter(Boolean))];
+        const namesMap = {};
+        await Promise.all(
+          uniqueUserIds.map(async (userId) => {
+            try {
+              const name = await verificationApi.getUserName(userId);
+              if (name) namesMap[userId] = name;
+            } catch (e) {
+              console.error(`Failed to fetch name for ${userId}`, e);
+            }
+          })
+        );
+        setAthleteNames(namesMap);
+      }
     } catch (error) {
       console.error('Error fetching alerts:', error);
       toast.error('Failed to load alerts');
@@ -43,6 +63,14 @@ const Alerts = ({ jwtToken }) => {
       setLoading(false);
     }
   };
+
+  // Enrich alerts with athlete names
+  const enrichedAlerts = useMemo(() => {
+    return alerts.map(alert => ({
+      ...alert,
+      athleteName: athleteNames[alert.userId] || null
+    }));
+  }, [alerts, athleteNames]);
 
   const incompleteExerciseCount = alerts.reduce(
     (sum, alert) => sum + alert.incompleteExercises.length,
@@ -153,7 +181,7 @@ const Alerts = ({ jwtToken }) => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {alerts.map((alert) => (
+                {enrichedAlerts.map((alert) => (
                   <AlertRow key={alert.sessionId} alert={alert} />
                 ))}
               </tbody>
@@ -181,8 +209,8 @@ const AlertRow = ({ alert }) => {
               <FiAlertTriangle className="text-red-600" />
             </div>
             <div>
-              <p className="font-semibold text-gray-900">Athlete #{alert.userId.slice(-6)}</p>
-              <p className="text-sm text-gray-500">Session: {alert.sessionId.slice(-8)}</p>
+              <p className="font-semibold text-gray-900">{alert.athleteName || 'Unknown Athlete'}</p>
+              <p className="text-sm text-gray-500">{alert.date}</p>
             </div>
           </div>
         </td>

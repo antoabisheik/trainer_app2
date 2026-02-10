@@ -1,5 +1,5 @@
 'use client';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -16,6 +16,7 @@ import PlaceholderPage from './PlaceholderPage';
 import AthleteAnalysis from './AthleteAnalysis';
 import Attendance from './Attendance';
 import LoadingOverlay from './LoadingOverlay';
+import verificationApi from '../api/verification-api';
 import {
   getTeamReadinessScore, getLoadBalanceScore,
 } from '../lib/dataUtils';
@@ -37,6 +38,7 @@ const TrainerDashboard = () => {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [jwtToken, setJwtToken] = useState(null);
   const [athletes, setAthletes] = useState([]);
+  const [athleteNames, setAthleteNames] = useState({});
 
   useEffect(() => {
     const initializeTrainer = async () => {
@@ -58,7 +60,25 @@ const TrainerDashboard = () => {
         });
         if (res.ok) {
           const data = await res.json();
-          setAthletes(data.data || []);
+          const athletesList = data.data || [];
+          setAthletes(athletesList);
+
+          // Fetch names for all athletes
+          const namesMap = {};
+          await Promise.all(
+            athletesList.map(async (athlete) => {
+              const id = athlete.id || athlete.odid;
+              if (id && !athlete.name) {
+                try {
+                  const name = await verificationApi.getUserName(id);
+                  if (name) namesMap[id] = name;
+                } catch (e) {
+                  console.error(`Failed to fetch name for ${id}`);
+                }
+              }
+            })
+          );
+          setAthleteNames(namesMap);
         }
 
         setLoading(false);
@@ -71,6 +91,17 @@ const TrainerDashboard = () => {
 
     initializeTrainer();
   }, [router]);
+
+  // Enrich athletes with names
+  const enrichedAthletes = useMemo(() => {
+    return athletes.map(athlete => {
+      const id = athlete.id || athlete.odid;
+      return {
+        ...athlete,
+        name: athlete.name || athleteNames[id] || null
+      };
+    });
+  }, [athletes, athleteNames]);
 
   const handleLogout = () => {
     localStorage.removeItem('trainerData');
@@ -88,7 +119,7 @@ const TrainerDashboard = () => {
   const renderContent = () => {
     switch (activeTab) {
       case 'overview':
-        return <CommandCenter trainer={trainer} jwtToken={jwtToken} onNavigate={setActiveTab} />;
+        return <CommandCenter trainer={trainer} jwtToken={jwtToken} onNavigate={setActiveTab} athletes={enrichedAthletes} />;
       case 'athletes':
         return <AthletesList jwtToken={jwtToken} />;
       case 'sessions':
@@ -96,7 +127,7 @@ const TrainerDashboard = () => {
       case 'alerts':
         return <Alerts jwtToken={jwtToken} />;
       case 'analytics':
-        return <AthleteAnalysis jwtToken={jwtToken} athletes={athletes} />;
+        return <AthleteAnalysis jwtToken={jwtToken} athletes={enrichedAthletes} />;
       case 'attendance':
         return <Attendance jwtToken={jwtToken} />;
       default:
@@ -233,8 +264,8 @@ const TrainerDashboard = () => {
 
 // ─── Command Center Dashboard ────────────────────────────────────────────────
 
-const CommandCenter = ({ trainer, jwtToken, onNavigate }) => {
-  const [data, setData] = useState({ athletes: [], sessions: [], alerts: [] });
+const CommandCenter = ({ trainer, jwtToken, onNavigate, athletes = [] }) => {
+  const [data, setData] = useState({ sessions: [], alerts: [] });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -243,18 +274,15 @@ const CommandCenter = ({ trainer, jwtToken, onNavigate }) => {
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
         const headers = { Authorization: `Bearer ${jwtToken}` };
 
-        const [athletesRes, sessionsRes, alertsRes] = await Promise.all([
-          fetch(`${API_BASE_URL}/trainer-app/clients`, { headers }),
+        const [sessionsRes, alertsRes] = await Promise.all([
           fetch(`${API_BASE_URL}/trainer-app/sessions/today`, { headers }),
           fetch(`${API_BASE_URL}/trainer-app/alerts`, { headers }),
         ]);
 
-        const athletesData = await athletesRes.json();
         const sessionsData = await sessionsRes.json();
         const alertsData = await alertsRes.json();
 
         setData({
-          athletes: athletesData.data || [],
           sessions: sessionsData.data || [],
           alerts: alertsData.data || [],
         });
@@ -274,7 +302,7 @@ const CommandCenter = ({ trainer, jwtToken, onNavigate }) => {
     day: 'numeric',
   });
 
-  const teamReadiness = getTeamReadinessScore(data.athletes);
+  const teamReadiness = getTeamReadinessScore(athletes);
   const loadBalance = getLoadBalanceScore(data.sessions);
   const inProgressCount = data.sessions.filter(s => s.status === 'in-progress').length;
 
@@ -286,10 +314,10 @@ const CommandCenter = ({ trainer, jwtToken, onNavigate }) => {
   }, {});
 
   const atRiskRows = data.alerts.map((alert) => {
-    const athlete = data.athletes.find(a => a.id === alert.userId);
+    const athlete = athletes.find(a => a.id === alert.userId);
     return {
       ...alert,
-      name: athlete?.name || `Athlete #${alert.userId?.slice(-6) || 'N/A'}`,
+      name: athlete?.name || 'Unknown Athlete',
       batch: athlete?.batch || 'General',
     };
   });
@@ -326,7 +354,7 @@ const CommandCenter = ({ trainer, jwtToken, onNavigate }) => {
         <StatCard
           label="Team Readiness"
           value={`${teamReadiness}%`}
-          subtext={`${data.athletes.length} athletes`}
+          subtext={`${athletes.length} athletes`}
           icon={Target}
         />
         <StatCard

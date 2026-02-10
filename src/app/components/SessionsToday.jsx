@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import {
   FiClock, FiUser, FiCalendar, FiChevronLeft, FiChevronRight,
   FiX, FiCheck, FiAlertTriangle, FiActivity, FiTarget, FiPlay,
 } from 'react-icons/fi';
 import { MotionReplayModal, useMotionReplayModal } from './sessions';
+import verificationApi from '../api/verification-api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
@@ -26,6 +27,7 @@ const SessionsToday = ({ jwtToken, trainer }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [selectedSession, setSelectedSession] = useState(null);
   const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
+  const [athleteNames, setAthleteNames] = useState({});
 
   // Motion replay modal state
   const motionReplay = useMotionReplayModal();
@@ -60,6 +62,50 @@ const SessionsToday = ({ jwtToken, trainer }) => {
       setLoading(false);
     }
   };
+
+  // Fetch athlete names for sessions
+  useEffect(() => {
+    if (!sessions.length) return;
+    const fetchNames = async () => {
+      const uniqueUserIds = [...new Set(sessions.map(s => s.userId).filter(Boolean))];
+      if (uniqueUserIds.length === 0) return;
+
+      const namesMap = {};
+      await Promise.all(
+        uniqueUserIds.map(async (userId) => {
+          if (!athleteNames[userId]) {
+            try {
+              const name = await verificationApi.getUserName(userId);
+              if (name) namesMap[userId] = name;
+            } catch (e) {
+              console.error(`Failed to fetch name for ${userId}`, e);
+            }
+          }
+        })
+      );
+      if (Object.keys(namesMap).length > 0) {
+        setAthleteNames(prev => ({ ...prev, ...namesMap }));
+      }
+    };
+    fetchNames();
+  }, [sessions]);
+
+  // Enrich sessions with athlete names
+  const enrichedSessions = useMemo(() => {
+    return sessions.map(session => ({
+      ...session,
+      athleteName: session.athleteName || athleteNames[session.userId] || null
+    }));
+  }, [sessions, athleteNames]);
+
+  // Enrich selected session with athlete name
+  const enrichedSelectedSession = useMemo(() => {
+    if (!selectedSession) return null;
+    return {
+      ...selectedSession,
+      athleteName: selectedSession.athleteName || athleteNames[selectedSession.userId] || null
+    };
+  }, [selectedSession, athleteNames]);
 
   const fetchSessionDetail = async (sessionId) => {
     setSessionDetailLoading(true);
@@ -100,18 +146,18 @@ const SessionsToday = ({ jwtToken, trainer }) => {
   const isToday = formatDateForAPI(selectedDate) === formatDateForAPI(new Date());
 
   // Compute stats
-  const asPlanned = sessions.filter((s) => {
+  const asPlanned = enrichedSessions.filter((s) => {
     const total = s.exercises?.length || 1;
     const completed = s.exercises?.filter((e) => e.completed).length || 0;
     return completed / total >= 0.8;
   }).length;
-  const withDeviations = sessions.length - asPlanned;
+  const withDeviations = enrichedSessions.length - asPlanned;
 
   // Unique batches
-  const uniqueBatches = [...new Set(sessions.map((s) => s.batch || 'General'))];
+  const uniqueBatches = [...new Set(enrichedSessions.map((s) => s.batch || 'General'))];
 
   // Filter logic
-  const filteredSessions = sessions.filter((s) => {
+  const filteredSessions = enrichedSessions.filter((s) => {
     const total = s.exercises?.length || 1;
     const completed = s.exercises?.filter((e) => e.completed).length || 0;
     const pct = completed / total;
@@ -163,14 +209,14 @@ const SessionsToday = ({ jwtToken, trainer }) => {
   };
 
   // If a session is selected, show the detail view
-  if (selectedSession) {
+  if (enrichedSelectedSession) {
     return (
       <>
         <SessionDetailView
-          session={selectedSession}
+          session={enrichedSelectedSession}
           onBack={() => setSelectedSession(null)}
           loading={sessionDetailLoading}
-          onViewMotion={() => motionReplay.openModal(selectedSession, selectedSession.athleteName)}
+          onViewMotion={() => motionReplay.openModal(enrichedSelectedSession, enrichedSelectedSession.athleteName)}
         />
         <MotionReplayModal
           isOpen={motionReplay.isOpen}
@@ -196,7 +242,7 @@ const SessionsToday = ({ jwtToken, trainer }) => {
         {/* Top stats */}
         <div className="flex items-center gap-6 text-right">
           <div>
-            <p className="text-2xl font-bold text-gray-900">{sessions.length}</p>
+            <p className="text-2xl font-bold text-gray-900">{enrichedSessions.length}</p>
             <p className="text-[10px] text-gray-500 uppercase">Total Sessions</p>
           </div>
           <div>
@@ -377,7 +423,7 @@ const SessionsToday = ({ jwtToken, trainer }) => {
                             <FiUser className="text-gray-400 text-xs" />
                           </div>
                           <span className="text-sm text-gray-900">
-                            {session.athleteName || `Athlete`}
+                            {session.athleteName || 'Unknown Athlete'}
                           </span>
                         </div>
                       </td>
@@ -506,7 +552,7 @@ const SessionDetailView = ({ session, onBack, loading, onViewMotion }) => {
         <div className="flex-1">
           <h2 className="text-2xl font-bold text-gray-900">Session Details</h2>
           <p className="text-sm text-gray-500">
-            {session.date} · {session.athlete?.name || 'Athlete'} · Session ID: {session.sessionId || session.id}
+            {session.date} · {session.athleteName || 'Unknown Athlete'}
           </p>
         </div>
         <div className="flex items-center gap-4">

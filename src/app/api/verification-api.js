@@ -44,6 +44,19 @@ async verifyGymAccess() {
   return data;
 }
 
+async getUserName(userId){
+  try {
+      const response = await fetch(`${API_BASE_URL}/username?userId=${userId}`);
+      if(!response.ok){
+        console.error('Failed to fetch the session');
+      }
+      const data = await response.json();
+      return data.data.displayName;
+  }
+  catch (error){
+     console.error(error);
+  };
+}
 
   /**
    * Logout user

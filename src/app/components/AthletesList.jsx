@@ -4,10 +4,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 import { FiSearch, FiUser, FiActivity, FiCalendar } from 'react-icons/fi';
 import AthleteDetail from './AthleteDetail';
+import verificationApi from '../api/verification-api';
 
 const AthletesList = ({ jwtToken }) => {
   const [athletes, setAthletes] = useState([]);
   const [attendanceData, setAttendanceData] = useState(null);
+  const [athleteNames, setAthleteNames] = useState({});
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAthlete, setSelectedAthlete] = useState(null);
@@ -45,11 +47,31 @@ const AthletesList = ({ jwtToken }) => {
       const attendance7d = attendance7dRes.ok ? await attendance7dRes.json() : null;
       const attendance30d = attendance30dRes.ok ? await attendance30dRes.json() : null;
 
-      setAthletes(athletesData.data || []);
+      const fetchedAthletes = athletesData.data || [];
+      setAthletes(fetchedAthletes);
       setAttendanceData({
         week: attendance7d?.data || null,
         month: attendance30d?.data || null,
       });
+
+      // Fetch names for all athletes
+      if (fetchedAthletes.length > 0) {
+        const namesMap = {};
+        await Promise.all(
+          fetchedAthletes.map(async (athlete) => {
+            const id = athlete.id;
+            if (id) {
+              try {
+                const name = await verificationApi.getUserName(id);
+                if (name) namesMap[id] = name;
+              } catch (e) {
+                console.error(`Failed to fetch name for ${id}`, e);
+              }
+            }
+          })
+        );
+        setAthleteNames(namesMap);
+      }
     } catch (error) {
       console.error('Error fetching data:', error);
       toast.error('Failed to load athletes');
@@ -58,9 +80,13 @@ const AthletesList = ({ jwtToken }) => {
     }
   };
 
-  // Merge athlete data with attendance stats
+  // Merge athlete data with attendance stats and names
   const enrichedAthletes = useMemo(() => {
-    if (!attendanceData?.month) return athletes.map(a => ({ ...a, stats: null }));
+    if (!attendanceData?.month) return athletes.map(a => ({
+      ...a,
+      name: a.name || athleteNames[a.id] || null,
+      stats: null
+    }));
 
     const weekAthletes = attendanceData.week?.athletes || [];
     const monthAthletes = attendanceData.month?.athletes || [];
@@ -72,6 +98,8 @@ const AthletesList = ({ jwtToken }) => {
     monthAthletes.forEach(a => { monthMap[a.id] = a; });
 
     return athletes.map(athlete => {
+      // Add athlete name from fetched names
+      const athleteName = athlete.name || athleteNames[athlete.id] || null;
       const week = weekMap[athlete.id] || null;
       const month = monthMap[athlete.id] || null;
 
@@ -124,6 +152,7 @@ const AthletesList = ({ jwtToken }) => {
 
       return {
         ...athlete,
+        name: athleteName,
         stats: {
           attendance7d,
           attendance30d,
@@ -140,7 +169,7 @@ const AthletesList = ({ jwtToken }) => {
         },
       };
     });
-  }, [athletes, attendanceData]);
+  }, [athletes, attendanceData, athleteNames]);
 
   const uniqueBatches = [...new Set(enrichedAthletes.map((a) => a.batch || 'General'))];
 
@@ -516,7 +545,7 @@ const AthleteRow = ({ athlete, onSelect }) => {
           </div>
           <div>
             <span className="font-medium text-gray-900 text-sm block">
-              {athlete.name || 'Unnamed'}
+              {athlete.name || 'Unknown Athlete'}
             </span>
             <span className="text-xs text-gray-400">Last: {lastActive}</span>
           </div>

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import verificationApi from "../api/verification-api";
 
 // Import modular components
 import AttendanceHeader from "./attendance/AttendanceHeader";
@@ -25,6 +26,7 @@ function LoadingCard() {
 export default function Attendance({ jwtToken }) {
   const [range, setRange] = useState("30d");
   const [attendance, setAttendance] = useState(null);
+  const [athleteNames, setAthleteNames] = useState({});
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState(null);
   const [dateDetail, setDateDetail] = useState(null);
@@ -42,6 +44,26 @@ export default function Attendance({ jwtToken }) {
         if (!res.ok) throw new Error("Failed to fetch");
         const data = await res.json();
         setAttendance(data.data);
+
+        // Fetch names for all athletes
+        const athletes = data.data?.athletes || [];
+        if (athletes.length > 0) {
+          const namesMap = {};
+          await Promise.all(
+            athletes.map(async (athlete) => {
+              const id = athlete.id || athlete.odid;
+              if (id) {
+                try {
+                  const name = await verificationApi.getUserName(id);
+                  if (name) namesMap[id] = name;
+                } catch (e) {
+                  console.error(`Failed to fetch name for ${id}`, e);
+                }
+              }
+            })
+          );
+          setAthleteNames(namesMap);
+        }
       } catch (err) {
         console.error("Attendance error:", err);
       } finally {
@@ -74,6 +96,18 @@ export default function Attendance({ jwtToken }) {
     };
     fetchDateDetail();
   }, [jwtToken, selectedDate]);
+
+  // Enrich athletes with names
+  const enrichedAthletes = useMemo(() => {
+    if (!attendance?.athletes) return [];
+    return attendance.athletes.map(athlete => {
+      const id = athlete.id || athlete.odid;
+      return {
+        ...athlete,
+        name: athleteNames[id] || athlete.name || athlete.athleteName || null
+      };
+    });
+  }, [attendance, athleteNames]);
 
   // Calculate streak
   const streak = useMemo(() => {
@@ -127,15 +161,14 @@ export default function Attendance({ jwtToken }) {
               <AttendanceHeatmapCard data={attendance} onDateClick={setSelectedDate} range={range} />
             </div>
             <div className="lg:col-span-2">
-              <TopPerformersCard athletes={attendance?.athletes} />
+              <TopPerformersCard athletes={enrichedAthletes} />
             </div>
           </div>
 
           {/* Section C: Session Analytics - Full Width */}
           <SessionOverviewCard
             calendar={attendance?.calendar}
-            athletes={attendance?.athletes}
-            onDateSelect={setSelectedDate}
+            athletes={enrichedAthletes}
           />
 
           {/* Date Sessions Dialog */}

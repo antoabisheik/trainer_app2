@@ -10,15 +10,31 @@ import {
   getAttendance7d,
   getAttendance30d,
 } from '../lib/dataUtils';
+import { auth } from '../api/firebase';
+import verificationApi from '../api/verification-api';
 
 const AthleteDetail = ({ athlete, onBack, jwtToken }) => {
   const [athleteSessions, setAthleteSessions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [userName,setuserName] = useState('');
+  const fetchuserName = async () =>  {
+    try {
+        const userName = await verificationApi.getUserName(athlete.id);
+        console.log(userName);
+        setuserName(userName);
+    }
+    catch (error) {
+      console.error('Failed to fetch the user name', error);
+    }
+  }
+  useEffect(() =>{
+    fetchuserName();
+  }, []);
 
   useEffect(() => {
     fetchAthleteSessions();
   }, [jwtToken, athlete.id]);
-
+  console.log(athlete);
   const fetchAthleteSessions = async () => {
     try {
       setLoading(true);
@@ -153,10 +169,10 @@ const AthleteDetail = ({ athlete, onBack, jwtToken }) => {
           {/* Athlete ID Card */}
           <div className="bg-white rounded-xl p-5 border border-gray-200 shadow-sm">
             <h4 className="text-xs text-gray-500 uppercase tracking-wide mb-2">
-              Athlete ID
+              Athlete Name
             </h4>
-            <p className="font-mono text-sm text-gray-700 break-all">
-              {athlete.id}
+            <p className="text-sm font-medium text-gray-900">
+              {userName || athlete.name || 'Unknown Athlete'}
             </p>
           </div>
 
