@@ -1,17 +1,14 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 
 // Import modular components
 import AttendanceHeader from "./attendance/AttendanceHeader";
 import AttendanceKPI from "./attendance/AttendanceKPI";
 import AttendanceHeatmapCard from "./attendance/AttendanceHeatmapCard";
-import SessionAnalyticsCard from "./attendance/SessionAnalyticsCard";
-import AthleteLeaderboardCard from "./attendance/AthleteLeaderboardCard";
-import ExecutionAlertsCard from "./attendance/ExecutionAlertsCard";
+import TopPerformersCard from "./attendance/TopPerformersCard";
 import SessionOverviewCard from "./attendance/SessionOverviewCard";
-import DateDetailCard from "./attendance/DateDetailCard";
+import DateSessionsDialog from "./attendance/DateSessionsDialog";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -124,57 +121,31 @@ export default function Attendance({ jwtToken }) {
           {/* Section A: KPI Cards */}
           <AttendanceKPI summary={attendance?.summary} analytics={analytics} />
 
-          {/* Section B: Visual Analytics - 2 Column Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            <AttendanceHeatmapCard data={attendance} onDateClick={setSelectedDate} range={range} />
-            <SessionAnalyticsCard sessionData={dateDetail?.present} loading={dateLoading} />
+          {/* Section B: Heatmap + Top Performers Side by Side */}
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+            <div className="lg:col-span-3">
+              <AttendanceHeatmapCard data={attendance} onDateClick={setSelectedDate} range={range} />
+            </div>
+            <div className="lg:col-span-2">
+              <TopPerformersCard athletes={attendance?.athletes} />
+            </div>
           </div>
 
-          {/* Section C: Insights - 3 Column Grid */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Column 1: Date Detail or Session Overview */}
-            <AnimatePresence mode="wait">
-              {selectedDate ? (
-                <motion.div
-                  key="date-detail"
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <DateDetailCard
-                    date={selectedDate}
-                    data={dateDetail}
-                    loading={dateLoading}
-                    onClose={() => setSelectedDate(null)}
-                  />
-                </motion.div>
-              ) : (
-                <motion.div
-                  key="session-overview"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <SessionOverviewCard
-                    summary={attendance?.summary}
-                    calendar={attendance?.calendar}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+          {/* Section C: Session Analytics - Full Width */}
+          <SessionOverviewCard
+            calendar={attendance?.calendar}
+            athletes={attendance?.athletes}
+            onDateSelect={setSelectedDate}
+          />
 
-            {/* Column 2: Execution Alerts */}
-            <ExecutionAlertsCard
-              athletes={attendance?.athletes}
-              calendar={attendance?.calendar}
-            />
-
-            {/* Column 3: Athlete Leaderboard */}
-            <AthleteLeaderboardCard
-              athletes={attendance?.athletes}
-            />
-          </div>
+          {/* Date Sessions Dialog */}
+          <DateSessionsDialog
+            isOpen={!!selectedDate}
+            date={selectedDate}
+            data={dateDetail}
+            loading={dateLoading}
+            onClose={() => setSelectedDate(null)}
+          />
         </>
       )}
     </div>
