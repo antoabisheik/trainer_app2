@@ -7,7 +7,7 @@ function Design() {
       
       <div className="flex flex-row text-white text-2xl font-bold">
       <Image width={40} height={40} src="/logo.png" alt='logo' /> 
-        <h2 className='text-[#A4FEB7] px-1 text-xl my-1'>Smartan Fittech</h2> 
+        <h2 className='text-white px-1 text-xl my-1'>Smartan Fittech</h2> 
       </div>
 
       <div className="flex-grow">

@@ -21,7 +21,7 @@ const LandingPage = () => {
       {/* Content */}
       <div className="flex items-center justify-center min-h-screen px-6 text-white">
         <div className="max-w-2xl">
-          <h1 className="text-4xl sm:text-5xl font-bold leading-tight mb-6">
+          <h1 className="text-white text-4xl sm:text-5xl font-bold leading-tight mb-6">
             Your All-In-One Fitness And <br />
             <span className="inline-block mt-2">
               <span className="bg-green-300 text-black px-2 py-1 rounded-md">
