@@ -132,7 +132,7 @@ const SignUpForm = () => {
       }
 
       toast.success("Signed in with Google!");
-      router.push('/gym');
+      router.push('/signin');
       
     } catch (err) {
       if (process.env.NODE_ENV === 'development') console.error("Google signup error:", err);
