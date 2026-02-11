@@ -16,6 +16,7 @@ import PlaceholderPage from './PlaceholderPage';
 import AthleteAnalysis from './AthleteAnalysis';
 import Attendance from './Attendance';
 import LoadingOverlay from './LoadingOverlay';
+import NotificationBell from './NotificationBell';
 import verificationApi from '../api/verification-api';
 import {
   getTeamReadinessScore, getLoadBalanceScore,
@@ -206,6 +207,7 @@ const TrainerDashboard = () => {
           <div className="flex items-center justify-between px-8 py-4">
             <div />
             <div className="flex items-center gap-4">
+              <NotificationBell jwtToken={jwtToken} />
               <button onClick={handleLogout} className="flex items-center gap-2 px-4 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition">
                 <LogOut className="w-4 h-4" />
                 <span className="text-sm font-medium">Logout</span>
@@ -229,9 +231,12 @@ const TrainerDashboard = () => {
               </div>
               <span className="font-semibold text-gray-900">SMARTAN</span>
             </div>
-            <button onClick={handleLogout} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition">
-              <LogOut className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <NotificationBell jwtToken={jwtToken} />
+              <button onClick={handleLogout} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition">
+                <LogOut className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         </header>
 

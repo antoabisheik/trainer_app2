@@ -11,6 +11,18 @@ const FLOATS_PER_VERTEX = 3;
 const EXPECTED_FLOATS = SMPL_VERTEX_COUNT * FLOATS_PER_VERTEX;
 
 /**
+ * Detect the storage type from a folder path
+ * @param {string} folderPath - GCS folder path
+ * @returns {"pose_data" | "smpl_data" | null}
+ */
+export function detectStorageType(folderPath) {
+  if (!folderPath) return null;
+  if (folderPath.startsWith("pose_data/")) return "pose_data";
+  if (folderPath.startsWith("smpl_data/")) return "smpl_data";
+  return null;
+}
+
+/**
  * Hook to load SMPL mesh vertices from a .bin file
  * @param {string} binUrl - URL to the .bin file containing float32 vertex data
  * @param {string} jwtToken - JWT token for authenticated API requests
@@ -254,22 +266,25 @@ export function generateFrameUrls(gcsFolder, apiBaseUrl) {
 
 /**
  * Hook to fetch actual frame filenames from the backend
- * This is the REQUIRED method for getting frame filenames - never guess or generate filenames
- * @param {string} folderPath - GCS folder path (smpl_data/userId/sessionId/folder)
+ * Supports both smpl_data/ (legacy) and pose_data/ (zip-based) storage formats
+ *
+ * @param {string} folderPath - GCS folder path (smpl_data/... or pose_data/...)
  * @param {string} apiBaseUrl - Base API URL
  * @param {string} jwtToken - JWT token for authentication
- * @returns {{ filenames: string[], loading: boolean, error: string | null }}
+ * @returns {{ filenames: string[], loading: boolean, error: string | null, storageType: string | null }}
  */
 export function useFrameFilenames(folderPath, apiBaseUrl, jwtToken = null) {
   const [filenames, setFilenames] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [storageType, setStorageType] = useState(null);
 
   useEffect(() => {
     if (!folderPath) {
       setFilenames([]);
       setLoading(false);
       setError(null);
+      setStorageType(null);
       return;
     }
 
@@ -280,16 +295,29 @@ export function useFrameFilenames(folderPath, apiBaseUrl, jwtToken = null) {
 
     async function fetchFilenames() {
       try {
-        // Parse path to get components
+        // Parse path to get components and determine storage type
         const pathParts = folderPath.split("/");
-        if (pathParts.length < 4 || pathParts[0] !== "smpl_data") {
+        if (pathParts.length < 4) {
           throw new Error(`Invalid folder path format: ${folderPath}`);
         }
 
-        const [, userId, sessionId, folder] = pathParts;
-        const url = `${apiBaseUrl}/trainer-app/smpl/frames/${userId}/${sessionId}/${folder}`;
+        const [prefix, userId, sessionId, folder] = pathParts;
+        const detectedType = detectStorageType(folderPath);
+        setStorageType(detectedType);
 
-        console.log("[useFrameFilenames] Fetching filenames from:", url);
+        // Build the appropriate URL based on storage type
+        let url;
+        if (detectedType === "pose_data") {
+          // New zip-based storage: pose_data/userId/sessionId/folder
+          url = `${apiBaseUrl}/trainer-app/smpl/pose/frames/${userId}/${sessionId}/${folder}`;
+          console.log("[useFrameFilenames] Using pose_data endpoint:", url);
+        } else if (detectedType === "smpl_data") {
+          // Legacy storage: smpl_data/userId/sessionId/folder
+          url = `${apiBaseUrl}/trainer-app/smpl/frames/${userId}/${sessionId}/${folder}`;
+          console.log("[useFrameFilenames] Using smpl_data endpoint:", url);
+        } else {
+          throw new Error(`Unsupported storage prefix: ${prefix}. Expected 'smpl_data' or 'pose_data'`);
+        }
 
         const headers = {};
         if (jwtToken) {
@@ -327,7 +355,58 @@ export function useFrameFilenames(folderPath, apiBaseUrl, jwtToken = null) {
     fetchFilenames();
   }, [folderPath, apiBaseUrl, jwtToken]);
 
-  return { filenames, loading, error };
+  return { filenames, loading, error, storageType };
+}
+
+/**
+ * Build frame URLs from filenames and folder path
+ * Handles both smpl_data/ and pose_data/ storage types
+ *
+ * @param {string} folderPath - GCS folder path
+ * @param {string[]} filenames - Array of .bin filenames
+ * @param {string} apiBaseUrl - Base API URL
+ * @returns {string[]} Array of frame URLs
+ */
+export function buildFrameUrls(folderPath, filenames, apiBaseUrl) {
+  if (!folderPath || !filenames || filenames.length === 0) {
+    return [];
+  }
+
+  const pathParts = folderPath.split("/");
+  if (pathParts.length < 4) {
+    console.warn("Invalid folder path:", folderPath);
+    return [];
+  }
+
+  const [prefix, userId, sessionId, folder] = pathParts;
+  const storageType = detectStorageType(folderPath);
+
+  return filenames.map((filename) => {
+    if (storageType === "pose_data") {
+      // New zip-based storage endpoint
+      return `${apiBaseUrl}/trainer-app/smpl/pose/frame/${userId}/${sessionId}/${folder}/${filename}`;
+    } else {
+      // Legacy smpl_data endpoint
+      return `${apiBaseUrl}/trainer-app/smpl/frame/${userId}/${sessionId}/${folder}/${filename}`;
+    }
+  });
+}
+
+/**
+ * Hook to fetch filenames and build URLs in one step
+ * Convenient wrapper around useFrameFilenames + buildFrameUrls
+ *
+ * @param {string} folderPath - GCS folder path
+ * @param {string} apiBaseUrl - Base API URL
+ * @param {string} jwtToken - JWT token for authentication
+ * @returns {{ frameUrls: string[], loading: boolean, error: string | null, storageType: string | null }}
+ */
+export function usePoseFrameUrls(folderPath, apiBaseUrl, jwtToken = null) {
+  const { filenames, loading, error, storageType } = useFrameFilenames(folderPath, apiBaseUrl, jwtToken);
+
+  const frameUrls = filenames.length > 0 ? buildFrameUrls(folderPath, filenames, apiBaseUrl) : [];
+
+  return { frameUrls, loading, error, storageType, frameCount: filenames.length };
 }
 
 /**

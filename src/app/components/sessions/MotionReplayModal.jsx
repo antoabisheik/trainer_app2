@@ -12,7 +12,7 @@ import {
   Loader2,
 } from "lucide-react";
 import MotionReplayPlayer from "../smpl/MotionReplayPlayer";
-import { useFrameFilenames } from "../../hooks/useSmplMeshLoader";
+import { useFrameFilenames, buildFrameUrls, detectStorageType } from "../../hooks/useSmplMeshLoader";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -216,6 +216,7 @@ export default function MotionReplayModal({
 
   // Build frame URLs from actual filenames fetched from backend
   // IMPORTANT: Never generate/guess filenames - always use actual filenames from useFrameFilenames
+  // Supports both smpl_data/ (legacy) and pose_data/ (new zip-based) storage formats
   const frameUrls = useMemo(() => {
     if (!currentFolder?.path) {
       console.log("[MotionReplayModal] No folder path, returning empty URLs");
@@ -227,25 +228,14 @@ export default function MotionReplayModal({
       return [];
     }
 
-    // Parse the GCS path: smpl_data/userId/sessionId/folderName
-    const pathParts = currentFolder.path.split("/");
-    if (pathParts.length < 4 || pathParts[0] !== "smpl_data") {
-      console.error("[MotionReplayModal] Invalid folder path format:", currentFolder.path);
-      return [];
-    }
-
-    const [, userId, sessionId, folder] = pathParts;
-
+    const storageType = detectStorageType(currentFolder.path);
+    console.log("[MotionReplayModal] Storage type:", storageType);
     console.log("[MotionReplayModal] Building URLs from", frameFiles.length, "actual filenames");
     console.log("[MotionReplayModal] First filename:", frameFiles[0]);
-    console.log("[MotionReplayModal] Folder:", folder);
+    console.log("[MotionReplayModal] Folder path:", currentFolder.path);
 
-    // Build URLs from actual filenames returned by backend
-    // These filenames come directly from Firebase Storage listing, not generated
-    return frameFiles.map(
-      (filename) =>
-        `${storageBaseUrl}/trainer-app/smpl/frame/${userId}/${sessionId}/${folder}/${filename}`
-    );
+    // Use the buildFrameUrls helper that handles both storage types
+    return buildFrameUrls(currentFolder.path, frameFiles, storageBaseUrl);
   }, [currentFolder, frameFiles, storageBaseUrl]);
 
   // Reset recording selection when exercise changes
