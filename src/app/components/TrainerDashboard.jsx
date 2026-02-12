@@ -7,7 +7,7 @@ import {
   LogOut, Menu, X, Users, Activity, AlertTriangle,
   Calendar, LayoutGrid, PieChart, UserCheck,
   Clock, ChevronsLeft, ChevronRight, Eye, Clipboard,
-  Edit, TrendingUp, Zap, Target, Award,
+  Edit, TrendingUp, Zap, Target, Award, Dumbbell,
 } from 'lucide-react';
 import AthletesList from './AthletesList';
 import SessionsToday from './SessionsToday';
@@ -17,6 +17,7 @@ import AthleteAnalysis from './AthleteAnalysis';
 import Attendance from './Attendance';
 import LoadingOverlay from './LoadingOverlay';
 import NotificationBell from './NotificationBell';
+import WorkoutSchedulePlanner from './WorkoutSchedulePlanner';
 import verificationApi from '../api/verification-api';
 import {
   getTeamReadinessScore, getLoadBalanceScore,
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { id: 'overview', label: 'Dashboard', icon: LayoutGrid },
   { id: 'athletes', label: 'Athletes', icon: Users },
   { id: 'sessions', label: 'Sessions', icon: Calendar },
+  { id: 'workouts', label: 'Workout Planner', icon: Dumbbell },
   { id: 'analytics', label: 'Analytics', icon: PieChart },
   { id: 'attendance', label: 'Attendance', icon: UserCheck },
 ];
@@ -131,6 +133,8 @@ const TrainerDashboard = () => {
         return <AthleteAnalysis jwtToken={jwtToken} athletes={enrichedAthletes} />;
       case 'attendance':
         return <Attendance jwtToken={jwtToken} />;
+      case 'workouts':
+        return <WorkoutSchedulePlanner jwtToken={jwtToken} trainer={trainer} />;
       default:
         return <PlaceholderPage title={NAV_ITEMS.find(n => n.id === activeTab)?.label || activeTab} />;
     }
