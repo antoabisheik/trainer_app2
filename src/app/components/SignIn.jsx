@@ -104,7 +104,7 @@ function SignInForm() {
     setLoading(true);
 
     try {
-      // Step 1: Get Google credentials via Firebase popup
+      //Get Google credentials via Firebase popup
 
       // Step 2: Get Firebase ID token
       const firebaseToken = await result.user.getIdToken();
