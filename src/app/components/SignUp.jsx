@@ -19,13 +19,15 @@ const SignUpForm = () => {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
  
   //  Use Firebase's built-in email verification
   const handleSignUp = async (e) => {
     e.preventDefault();
+    if (loading) return;
+
     
     if (!name.trim()) {
       toast.error("Please enter your name");
@@ -52,7 +54,8 @@ const SignUpForm = () => {
       return;
     }
 
-    setLoading(true);
+    setLoading('email');
+    let shouldResetLoading = true;
 
     try {
       // Step 1: Create user with Firebase Client SDK
@@ -82,7 +85,6 @@ const SignUpForm = () => {
       }
 
       toast.success("Account created! Please check your email to verify.");
-      
       setTimeout(() => {
         router.push('/verify-email');
       }, 1500);

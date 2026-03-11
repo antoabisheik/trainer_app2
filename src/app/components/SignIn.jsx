@@ -9,17 +9,19 @@ import { auth, googleProvider } from '../api/firebase';
 import { useRouter } from 'next/navigation';
 import LoadingOverlay from './LoadingOverlay';
 import { toast } from 'sonner';
-
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 function SignInForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(null);
   const [showPassword, setShowPassword] = useState(false);
   const router = useRouter();
 
-
+const isLoading = loading !== null;
  const handleEmailLogin = async (e) => {
   e?.preventDefault();
+  if (isLoading) return; 
+
 
   if (!email.trim()) {
     toast.error('Please enter your email');
@@ -31,7 +33,8 @@ function SignInForm() {
     return;
   }
 
-  setLoading(true);
+  setLoading('email');
+  let shouldResetLoading = true;
 
   try {
     // Step 1: Authenticate with Firebase using email/password
@@ -68,7 +71,10 @@ function SignInForm() {
     localStorage.setItem('trainerData', JSON.stringify(trainerData));
 
     toast.success('Login successful!');
+    await wait(800); 
+    shouldResetLoading = false;
     router.push('/trainer');
+   
 
   } catch (err) {
     if (process.env.NODE_ENV === 'development') console.error('Login error:', err);
@@ -95,17 +101,21 @@ function SignInForm() {
 
     toast.error(errorMessage);
   } finally {
-    setLoading(false);
+    if (shouldResetLoading) {
+      setLoading(false);
+    }
   }
 };
 
   // Google Login - Get token from Firebase, send to trainer app backend
   const handleGoogleLogin = async () => {
-    setLoading(true);
+    if (isLoading) return;
+    setLoading('google');
+    let shouldResetLoading = true;
 
     try {
       //Get Google credentials via Firebase popup
-
+      const result = await signInWithPopup(auth, googleProvider);
       // Step 2: Get Firebase ID token
       const firebaseToken = await result.user.getIdToken();
 
@@ -135,6 +145,8 @@ function SignInForm() {
       localStorage.setItem('trainerData', JSON.stringify(trainerData));
 
       toast.success('Login successful!');
+      await wait(800);
+      shouldResetLoading = false;
       router.push('/trainer');
       
     } catch (err) {
