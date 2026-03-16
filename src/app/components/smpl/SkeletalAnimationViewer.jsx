@@ -9,6 +9,7 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import {
   useQuaternionAnimation,
   useAnimationPlayback,
+  PLAYBACK_SPEEDS,
   JOINT_TO_BONE_MAP,
   findBoneByName,
   logSkeletonBones,
@@ -329,11 +330,13 @@ function PlaybackControls({
   frameCount,
   fps,
   duration,
+  playbackSpeed,
   onPlayPause,
   onPrevFrame,
   onNextFrame,
   onRestart,
   onSeek,
+  onSpeedChange,
 }) {
   return (
     <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
@@ -391,6 +394,22 @@ function PlaybackControls({
         >
           <SkipForward className="w-5 h-5 text-gray-600" />
         </button>
+
+        {/* Speed Selector */}
+        <div className="ml-4 flex items-center gap-2">
+          <span className="text-xs text-gray-500">Speed:</span>
+          <select
+            value={playbackSpeed}
+            onChange={(e) => onSpeedChange(parseFloat(e.target.value))}
+            className="px-2 py-1 text-sm border border-gray-200 rounded-lg bg-white hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+          >
+            {PLAYBACK_SPEEDS.map((speed) => (
+              <option key={speed.value} value={speed.value}>
+                {speed.label}
+              </option>
+            ))}
+          </select>
+        </div>
       </div>
     </div>
   );
@@ -497,7 +516,7 @@ export default function SkeletalAnimationViewer({
 
         {/* Frame counter overlay */}
         <div className="absolute top-3 right-3 bg-black/60 text-white text-xs px-2 py-1 rounded">
-          Frame {playback.currentFrame + 1} / {playback.frameCount}
+          Frame {playback.currentFrame + 1} / {playback.frameCount} • {playback.playbackSpeed}x
         </div>
 
         {/* Controls hint */}
@@ -515,11 +534,13 @@ export default function SkeletalAnimationViewer({
             frameCount={playback.frameCount}
             fps={playback.fps}
             duration={playback.duration}
+            playbackSpeed={playback.playbackSpeed}
             onPlayPause={playback.togglePlayPause}
             onPrevFrame={playback.prevFrame}
             onNextFrame={playback.nextFrame}
             onRestart={playback.restart}
             onSeek={playback.goToFrame}
+            onSpeedChange={playback.setPlaybackSpeed}
           />
         </div>
       )}

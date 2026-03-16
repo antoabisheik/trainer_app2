@@ -616,6 +616,18 @@ export function useQuaternionAnimation(userId, sessionId, filename, apiBaseUrl, 
 }
 
 /**
+ * Available playback speed options
+ */
+export const PLAYBACK_SPEEDS = [
+  { label: "0.25x", value: 0.25 },
+  { label: "0.5x", value: 0.5 },
+  { label: "0.75x", value: 0.75 },
+  { label: "1x", value: 1 },
+  { label: "1.5x", value: 1.5 },
+  { label: "2x", value: 2 },
+];
+
+/**
  * Hook to manage animation playback state
  * @param {Object} animation - Parsed animation data
  * @param {boolean} autoPlay - Start playing automatically
@@ -624,6 +636,7 @@ export function useQuaternionAnimation(userId, sessionId, filename, apiBaseUrl, 
 export function useAnimationPlayback(animation, autoPlay = false) {
   const [currentFrame, setCurrentFrame] = useState(0);
   const [isPlaying, setIsPlaying] = useState(autoPlay);
+  const [playbackSpeed, setPlaybackSpeed] = useState(1); // 1 = normal speed
   const intervalRef = useRef(null);
 
   // Reset frame when animation changes
@@ -631,7 +644,7 @@ export function useAnimationPlayback(animation, autoPlay = false) {
     setCurrentFrame(0);
   }, [animation]);
 
-  // Playback loop
+  // Playback loop - respects playback speed
   useEffect(() => {
     if (!isPlaying || !animation || animation.frameCount === 0) {
       if (intervalRef.current) {
@@ -642,7 +655,9 @@ export function useAnimationPlayback(animation, autoPlay = false) {
     }
 
     const fps = animation.fps || 30;
-    const frameInterval = 1000 / fps;
+    // Adjust frame interval based on playback speed
+    // Higher speed = shorter interval, lower speed = longer interval
+    const frameInterval = 1000 / (fps * playbackSpeed);
 
     intervalRef.current = setInterval(() => {
       setCurrentFrame((prev) => {
@@ -657,7 +672,7 @@ export function useAnimationPlayback(animation, autoPlay = false) {
         intervalRef.current = null;
       }
     };
-  }, [isPlaying, animation]);
+  }, [isPlaying, animation, playbackSpeed]);
 
   const play = useCallback(() => setIsPlaying(true), []);
   const pause = useCallback(() => setIsPlaying(false), []);
@@ -687,6 +702,8 @@ export function useAnimationPlayback(animation, autoPlay = false) {
   return {
     currentFrame,
     isPlaying,
+    playbackSpeed,
+    setPlaybackSpeed,
     play,
     pause,
     togglePlayPause,
