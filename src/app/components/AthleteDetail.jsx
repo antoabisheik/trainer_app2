@@ -1,5 +1,4 @@
 'use client';
-
 import React, { useState, useEffect } from 'react';
 import { FiArrowLeft, FiActivity, FiUser } from 'react-icons/fi';
 import {
@@ -12,7 +11,6 @@ import {
 } from '../lib/dataUtils';
 import { auth } from '../api/firebase';
 import verificationApi from '../api/verification-api';
-
 const AthleteDetail = ({ athlete, onBack, jwtToken }) => {
   const [athleteSessions, setAthleteSessions] = useState([]);
   const [loading, setLoading] = useState(true);

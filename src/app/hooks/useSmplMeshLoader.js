@@ -419,3 +419,500 @@ export function getFirebaseStorageUrl(storagePath, bucket = "your-project.appspo
   const encodedPath = encodeURIComponent(storagePath);
   return `https://firebasestorage.googleapis.com/v0/b/${bucket}/o/${encodedPath}?alt=media`;
 }
+
+// ============================================================================
+// SMPL FACE INDICES HOOK
+// ============================================================================
+
+// Global cache for face indices (static data, same for all meshes)
+let globalFaceIndicesCache = null;
+
+/**
+ * Hook to fetch SMPL face indices from the backend
+ * Face indices define the triangle topology (13776 faces for SMPL)
+ * This data is static and cached globally after first fetch
+ *
+ * @param {string} apiBaseUrl - Base API URL
+ * @param {string} jwtToken - JWT token for authentication
+ * @returns {{ faceIndices: Uint32Array | null, loading: boolean, error: string | null }}
+ */
+export function useSmplFaces(apiBaseUrl, jwtToken = null) {
+  const [faceIndices, setFaceIndices] = useState(globalFaceIndicesCache);
+  const [loading, setLoading] = useState(!globalFaceIndicesCache);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    // Return cached data immediately
+    if (globalFaceIndicesCache) {
+      setFaceIndices(globalFaceIndicesCache);
+      setLoading(false);
+      return;
+    }
+
+    if (!apiBaseUrl) {
+      setLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function fetchFaces() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const url = `${apiBaseUrl}/trainer-app/smpl/faces/binary`;
+        const headers = {};
+        if (jwtToken) {
+          headers["Authorization"] = `Bearer ${jwtToken}`;
+        }
+
+        console.log("[useSmplFaces] Fetching face indices from:", url);
+
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch faces: ${response.status} ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const indices = new Uint32Array(arrayBuffer);
+
+        console.log("[useSmplFaces] Loaded face indices:", indices.length, "indices,", indices.length / 3, "faces");
+
+        // Cache globally
+        globalFaceIndicesCache = indices;
+        setFaceIndices(indices);
+        setError(null);
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.error("[useSmplFaces] Error fetching face indices:", err);
+          setError(err.message || "Failed to fetch face indices");
+          setFaceIndices(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchFaces();
+
+    return () => {
+      controller.abort();
+    };
+  }, [apiBaseUrl, jwtToken]);
+
+  return { faceIndices, loading, error };
+}
+
+/**
+ * Clear the global face indices cache (useful for testing)
+ */
+export function clearFaceIndicesCache() {
+  globalFaceIndicesCache = null;
+}
+
+// ============================================================================
+// MULTI-FRAME SMPL HOOKS (NEW)
+// ============================================================================
+
+/**
+ * Hook to fetch metadata for a multi-frame SMPL binary file
+ * @param {string} userId - User ID
+ * @param {string} sessionId - Session ID
+ * @param {string} filename - Multi-frame binary filename (e.g., "animation.bin")
+ * @param {string} apiBaseUrl - Base API URL
+ * @param {string} jwtToken - JWT token for authentication
+ * @returns {{ metadata: Object | null, loading: boolean, error: string | null }}
+ */
+export function useMultiFrameMetadata(userId, sessionId, filename, apiBaseUrl, jwtToken = null) {
+  const [metadata, setMetadata] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!userId || !sessionId || !filename || !apiBaseUrl) {
+      setMetadata(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    async function fetchMetadata() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const url = `${apiBaseUrl}/trainer-app/smpl/multi/${userId}/${sessionId}/${filename}/info`;
+        const headers = {};
+        if (jwtToken) {
+          headers["Authorization"] = `Bearer ${jwtToken}`;
+        }
+
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to fetch metadata: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        if (data.success && data.data) {
+          setMetadata(data.data);
+          setError(null);
+        } else {
+          throw new Error("Invalid metadata response format");
+        }
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.error("Error fetching multi-frame metadata:", err);
+          setError(err.message || "Failed to fetch metadata");
+          setMetadata(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    fetchMetadata();
+
+    return () => {
+      controller.abort();
+    };
+  }, [userId, sessionId, filename, apiBaseUrl, jwtToken]);
+
+  return { metadata, loading, error };
+}
+
+/**
+ * Hook to load a single frame from a multi-frame SMPL binary file
+ * @param {string} userId - User ID
+ * @param {string} sessionId - Session ID
+ * @param {string} filename - Multi-frame binary filename
+ * @param {number} frameIndex - Frame index (0-based)
+ * @param {string} apiBaseUrl - Base API URL
+ * @param {string} jwtToken - JWT token for authentication
+ * @returns {{ vertices: Float32Array | null, loading: boolean, error: string | null }}
+ */
+export function useMultiFrameSingleFrame(userId, sessionId, filename, frameIndex, apiBaseUrl, jwtToken = null) {
+  const [vertices, setVertices] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const abortControllerRef = useRef(null);
+
+  useEffect(() => {
+    if (!userId || !sessionId || !filename || frameIndex == null || !apiBaseUrl) {
+      setVertices(null);
+      setLoading(false);
+      setError(null);
+      return;
+    }
+
+    // Abort previous request if any
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    async function loadFrame() {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const url = `${apiBaseUrl}/trainer-app/smpl/multi/${userId}/${sessionId}/${filename}/frame/${frameIndex}`;
+        const headers = {};
+        if (jwtToken) {
+          headers["Authorization"] = `Bearer ${jwtToken}`;
+        }
+
+        const response = await fetch(url, {
+          signal: controller.signal,
+          headers,
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to load frame: ${response.status} ${response.statusText}`);
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
+        const floatArray = new Float32Array(arrayBuffer);
+
+        // Validate vertex count
+        if (floatArray.length !== EXPECTED_FLOATS) {
+          console.warn(
+            `Unexpected vertex count: got ${floatArray.length / 3} vertices, expected ${SMPL_VERTEX_COUNT}`
+          );
+        }
+
+        setVertices(floatArray);
+        setError(null);
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          console.error("Error loading multi-frame single frame:", err);
+          setError(err.message || "Failed to load frame");
+          setVertices(null);
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadFrame();
+
+    return () => {
+      controller.abort();
+    };
+  }, [userId, sessionId, filename, frameIndex, apiBaseUrl, jwtToken]);
+
+  return { vertices, loading, error };
+}
+
+/**
+ * Hook to download the complete multi-frame SMPL binary file
+ * Useful for passing to mobile apps or offline processing
+ * @param {string} userId - User ID
+ * @param {string} sessionId - Session ID
+ * @param {string} filename - Multi-frame binary filename
+ * @param {string} apiBaseUrl - Base API URL
+ * @param {string} jwtToken - JWT token for authentication
+ * @param {boolean} autoLoad - Whether to automatically load on mount (default: false)
+ * @returns {{ arrayBuffer: ArrayBuffer | null, metadata: Object | null, loading: boolean, error: string | null, load: Function }}
+ */
+export function useMultiFrameFile(userId, sessionId, filename, apiBaseUrl, jwtToken = null, autoLoad = false) {
+  const [arrayBuffer, setArrayBuffer] = useState(null);
+  const [metadata, setMetadata] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const abortControllerRef = useRef(null);
+
+  const load = useCallback(async () => {
+    if (!userId || !sessionId || !filename || !apiBaseUrl) {
+      setError("Missing required parameters");
+      return;
+    }
+
+    // Abort previous request if any
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    setLoading(true);
+    setError(null);
+
+    try {
+      const url = `${apiBaseUrl}/trainer-app/smpl/multi/${userId}/${sessionId}/${filename}`;
+      const headers = {};
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
+
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers,
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+      }
+
+      // Extract metadata from headers
+      const frameCount = parseInt(response.headers.get("X-Frame-Count") || "0", 10);
+      const vertexCount = parseInt(response.headers.get("X-Vertex-Count") || "0", 10);
+      const fps = parseFloat(response.headers.get("X-FPS") || "0");
+
+      const buffer = await response.arrayBuffer();
+
+      setArrayBuffer(buffer);
+      setMetadata({
+        frameCount,
+        vertexCount,
+        fps,
+        fileSize: buffer.byteLength,
+        duration: fps > 0 ? frameCount / fps : 0,
+      });
+      setError(null);
+    } catch (err) {
+      if (err.name !== "AbortError") {
+        console.error("Error downloading multi-frame file:", err);
+        setError(err.message || "Failed to download file");
+        setArrayBuffer(null);
+        setMetadata(null);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, [userId, sessionId, filename, apiBaseUrl, jwtToken]);
+
+  useEffect(() => {
+    if (autoLoad) {
+      load();
+    }
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [autoLoad, load]);
+
+  return { arrayBuffer, metadata, loading, error, load };
+}
+
+/**
+ * Hook to preload frames from a multi-frame SMPL file
+ * Similar to useSmplFramePreloader but for multi-frame format
+ * Fetches individual frames via the frame extraction endpoint
+ *
+ * @param {string} userId - User ID
+ * @param {string} sessionId - Session ID
+ * @param {string} filename - Multi-frame binary filename
+ * @param {string} apiBaseUrl - Base API URL
+ * @param {string} jwtToken - JWT token for authentication
+ * @returns {{ frames: Map<number, Float32Array>, loading: boolean, progress: number, error: string | null, frameCount: number }}
+ */
+export function useMultiFramePreloader(userId, sessionId, filename, apiBaseUrl, jwtToken = null) {
+  const [frames, setFrames] = useState(new Map());
+  const [loading, setLoading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [error, setError] = useState(null);
+  const [frameCount, setFrameCount] = useState(0);
+  const abortControllerRef = useRef(null);
+
+  // First, fetch metadata to get frame count
+  const { metadata: fileMetadata, loading: metadataLoading, error: metadataError } =
+    useMultiFrameMetadata(userId, sessionId, filename, apiBaseUrl, jwtToken);
+
+  useEffect(() => {
+    if (!userId || !sessionId || !filename || !apiBaseUrl) {
+      setFrames(new Map());
+      setLoading(false);
+      setProgress(0);
+      setFrameCount(0);
+      return;
+    }
+
+    if (metadataLoading) {
+      return;
+    }
+
+    if (metadataError) {
+      setError(metadataError);
+      return;
+    }
+
+    if (!fileMetadata || !fileMetadata.frameCount) {
+      return;
+    }
+
+    // Abort previous loading
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    async function loadAllFrames() {
+      setLoading(true);
+      setProgress(0);
+      setError(null);
+      setFrameCount(fileMetadata.frameCount);
+
+      console.log("[useMultiFramePreloader] Loading", fileMetadata.frameCount, "frames from", filename);
+
+      const loadedFrames = new Map();
+      let loadedCount = 0;
+
+      const headers = {};
+      if (jwtToken) {
+        headers["Authorization"] = `Bearer ${jwtToken}`;
+      }
+
+      try {
+        // Load frames in batches
+        const batchSize = 5;
+        for (let i = 0; i < fileMetadata.frameCount; i += batchSize) {
+          if (controller.signal.aborted) break;
+
+          const batch = [];
+          for (let j = i; j < Math.min(i + batchSize, fileMetadata.frameCount); j++) {
+            batch.push(j);
+          }
+
+          const batchPromises = batch.map(async (frameIndex) => {
+            try {
+              const url = `${apiBaseUrl}/trainer-app/smpl/multi/${userId}/${sessionId}/${filename}/frame/${frameIndex}`;
+              const response = await fetch(url, {
+                signal: controller.signal,
+                headers,
+              });
+
+              if (!response.ok) {
+                throw new Error(`Failed to load frame ${frameIndex}`);
+              }
+
+              const arrayBuffer = await response.arrayBuffer();
+              return { frameIndex, data: new Float32Array(arrayBuffer) };
+            } catch (err) {
+              if (err.name !== "AbortError") {
+                console.warn(`Failed to load frame ${frameIndex}:`, err);
+              }
+              return { frameIndex, data: null };
+            }
+          });
+
+          const results = await Promise.all(batchPromises);
+
+          for (const result of results) {
+            if (result.data) {
+              loadedFrames.set(result.frameIndex, result.data);
+            }
+            loadedCount++;
+            setProgress((loadedCount / fileMetadata.frameCount) * 100);
+          }
+
+          // Update frames progressively
+          setFrames(new Map(loadedFrames));
+        }
+
+        if (loadedFrames.size === 0 && fileMetadata.frameCount > 0) {
+          setError("Failed to load any frames");
+        }
+      } catch (err) {
+        if (err.name !== "AbortError") {
+          setError(err.message || "Failed to load frames");
+        }
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadAllFrames();
+
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [userId, sessionId, filename, apiBaseUrl, jwtToken, fileMetadata, metadataLoading, metadataError]);
+
+  return {
+    frames,
+    loading: loading || metadataLoading,
+    progress,
+    error: error || metadataError,
+    frameCount
+  };
+}

@@ -1,105 +1,40 @@
 "use client";
 
-import { useRef, useEffect, useMemo, useState, Suspense } from "react";
+import { useRef, useEffect, useMemo, Suspense } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera, Environment } from "@react-three/drei";
+import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { Loader2 } from "lucide-react";
-
-// Cache for SMPL face indices (loaded once, reused)
-let cachedFaceIndices = null;
-let faceIndicesPromise = null;
-
-/**
- * Load SMPL face indices from backend (cached)
- */
-async function loadSmplFaceIndices(apiBaseUrl, jwtToken = null) {
-  // Return cached if available
-  if (cachedFaceIndices) {
-    console.log("[SMPL] Using cached face indices:", cachedFaceIndices.length, "indices");
-    return cachedFaceIndices;
-  }
-
-  // Return pending promise if loading
-  if (faceIndicesPromise) {
-    console.log("[SMPL] Face indices already loading...");
-    return faceIndicesPromise;
-  }
-
-  // Load face indices from backend
-  console.log("[SMPL] Loading face indices from:", `${apiBaseUrl}/trainer-app/smpl/faces`);
-
-  faceIndicesPromise = (async () => {
-    try {
-      const headers = {};
-      if (jwtToken) {
-        headers["Authorization"] = `Bearer ${jwtToken}`;
-      }
-
-      const response = await fetch(`${apiBaseUrl}/trainer-app/smpl/faces`, { headers });
-      console.log("[SMPL] Face indices response status:", response.status);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error("[SMPL] Face indices error response:", errorText);
-        throw new Error(`Failed to load face indices: ${response.status}`);
-      }
-
-      const data = await response.json();
-      console.log("[SMPL] Face indices response:", data.success, "faces:", data.data?.faceCount);
-
-      if (data.success && data.data.faces) {
-        cachedFaceIndices = new Uint32Array(data.data.faces.flat());
-        console.log("[SMPL] Face indices loaded:", cachedFaceIndices.length, "indices");
-        return cachedFaceIndices;
-      }
-      throw new Error("Invalid face indices response");
-    } catch (error) {
-      console.error("[SMPL] Error loading face indices:", error);
-      faceIndicesPromise = null; // Reset to allow retry
-      return null;
-    }
-  })();
-
-  return faceIndicesPromise;
-}
 
 /**
  * SMPL mesh geometry component
  * Renders vertices from Float32Array as a mesh with proper face topology
+ * Face indices are fetched from the backend API (passed as prop)
  */
 function SmplMesh({ vertices, faceIndices, color = "#10b981", wireframe = false }) {
   const meshRef = useRef();
   const geometryRef = useRef();
 
-  // Log when props change
-  useEffect(() => {
-    console.log("[SmplMesh] Props updated - vertices:", vertices?.length, "faceIndices:", faceIndices?.length);
-  }, [vertices, faceIndices]);
-
   // Create geometry with both vertices AND face indices
   const geometry = useMemo(() => {
-    console.log("[SmplMesh] Creating geometry - vertices:", vertices?.length, "faceIndices:", faceIndices?.length);
-    const geo = new THREE.BufferGeometry();
-
-    if (vertices) {
-      const positionAttribute = new THREE.BufferAttribute(vertices, 3);
-      geo.setAttribute("position", positionAttribute);
-
-      // Add face indices if available (critical for proper mesh rendering)
-      if (faceIndices) {
-        console.log("[SmplMesh] Setting face indices on geometry");
-        geo.setIndex(new THREE.BufferAttribute(faceIndices, 1));
-      } else {
-        console.warn("[SmplMesh] No face indices available - mesh will render incorrectly!");
-      }
-
-      geo.computeVertexNormals();
-      geo.computeBoundingSphere();
+    if (!vertices || !faceIndices) {
+      return new THREE.BufferGeometry();
     }
 
+    console.log("[SmplMesh] Creating geometry -", vertices.length / 3, "vertices,", faceIndices.length / 3, "faces");
+    const geo = new THREE.BufferGeometry();
+
+    const positionAttribute = new THREE.BufferAttribute(vertices, 3);
+    geo.setAttribute("position", positionAttribute);
+
+    // Set face indices from backend
+    geo.setIndex(new THREE.BufferAttribute(faceIndices, 1));
+
+    geo.computeVertexNormals();
+    geo.computeBoundingSphere();
+
     return geo;
-  }, [vertices, faceIndices]); // Recreate when either changes
+  }, [vertices, faceIndices]);
 
   // Store ref
   useEffect(() => {
@@ -108,7 +43,7 @@ function SmplMesh({ vertices, faceIndices, color = "#10b981", wireframe = false 
 
   // Update vertices without recreating geometry (for animation)
   useEffect(() => {
-    if (!vertices || !geometryRef.current) return;
+    if (!vertices || !geometryRef.current || !faceIndices) return;
 
     const positionAttr = geometryRef.current.getAttribute("position");
     if (positionAttr && positionAttr.array !== vertices) {
@@ -116,7 +51,7 @@ function SmplMesh({ vertices, faceIndices, color = "#10b981", wireframe = false 
       geometryRef.current.computeVertexNormals();
       geometryRef.current.computeBoundingSphere();
     }
-  }, [vertices]);
+  }, [vertices, faceIndices]);
 
   // Gentle rotation animation (preserve X rotation for coordinate system fix)
   useFrame((state) => {
@@ -128,7 +63,7 @@ function SmplMesh({ vertices, faceIndices, color = "#10b981", wireframe = false 
     }
   });
 
-  if (!vertices) return null;
+  if (!vertices || !faceIndices) return null;
 
   return (
     <mesh
@@ -277,8 +212,11 @@ function EmptyState() {
 
 /**
  * Main SMPL Mesh Viewer component
+ * Face indices should be fetched from backend using useSmplFaces hook
+ *
  * @param {Object} props
  * @param {Float32Array} props.vertices - Vertex data from useSmplMeshLoader
+ * @param {Uint32Array} props.faceIndices - Face indices from useSmplFaces hook
  * @param {boolean} props.loading - Loading state
  * @param {string} props.error - Error message if any
  * @param {Function} props.onRetry - Retry callback
@@ -286,11 +224,10 @@ function EmptyState() {
  * @param {boolean} props.wireframe - Show wireframe mode
  * @param {boolean} props.showPoints - Show as point cloud instead of mesh
  * @param {string} props.className - Additional CSS classes
- * @param {string} props.apiBaseUrl - API base URL for loading face indices
- * @param {string} props.jwtToken - JWT token for authentication
  */
 export default function SmplMeshViewer({
   vertices,
+  faceIndices,
   loading = false,
   error = null,
   onRetry,
@@ -298,56 +235,9 @@ export default function SmplMeshViewer({
   wireframe = false,
   showPoints = false,
   className = "",
-  apiBaseUrl = "http://localhost:5000",
-  jwtToken = null,
 }) {
-  const [faceIndices, setFaceIndices] = useState(null);
-  const [facesLoading, setFacesLoading] = useState(false);
-  const [facesError, setFacesError] = useState(null);
-
-  // Load SMPL face indices (once, cached globally)
-  useEffect(() => {
-    // Skip if showing point cloud
-    if (showPoints) {
-      console.log("[SmplMeshViewer] Skipping face load - showPoints mode");
-      return;
-    }
-
-    // Use cached indices if available
-    if (cachedFaceIndices) {
-      console.log("[SmplMeshViewer] Using cached face indices");
-      setFaceIndices(cachedFaceIndices);
-      return;
-    }
-
-    // Don't reload if already have indices or currently loading
-    if (faceIndices || facesLoading) {
-      return;
-    }
-
-    console.log("[SmplMeshViewer] Starting face indices load from:", apiBaseUrl);
-    setFacesLoading(true);
-    setFacesError(null);
-
-    loadSmplFaceIndices(apiBaseUrl, jwtToken)
-      .then((indices) => {
-        if (indices) {
-          console.log("[SmplMeshViewer] Face indices loaded successfully:", indices.length);
-          setFaceIndices(indices);
-        } else {
-          console.error("[SmplMeshViewer] Face indices load returned null");
-          setFacesError("Failed to load face indices");
-        }
-      })
-      .catch((err) => {
-        console.error("[SmplMeshViewer] Face indices load error:", err);
-        setFacesError(err.message);
-      })
-      .finally(() => setFacesLoading(false));
-  }, [apiBaseUrl, jwtToken, showPoints, faceIndices, facesLoading]);
-
   // Show loading state
-  if (loading || facesLoading) {
+  if (loading) {
     return (
       <div className={`relative w-full h-full min-h-[300px] rounded-xl overflow-hidden ${className}`}>
         <LoadingSkeleton />
@@ -356,19 +246,28 @@ export default function SmplMeshViewer({
   }
 
   // Show error state
-  if (error || facesError) {
+  if (error) {
     return (
       <div className={`relative w-full h-full min-h-[300px] rounded-xl overflow-hidden ${className}`}>
-        <ErrorDisplay error={error || facesError} onRetry={onRetry} />
+        <ErrorDisplay error={error} onRetry={onRetry} />
       </div>
     );
   }
 
-  // Show empty state
+  // Show empty state if no vertices
   if (!vertices) {
     return (
       <div className={`relative w-full h-full min-h-[300px] rounded-xl overflow-hidden ${className}`}>
         <EmptyState />
+      </div>
+    );
+  }
+
+  // Show loading if we have vertices but no face indices yet (and not in point cloud mode)
+  if (!faceIndices && !showPoints) {
+    return (
+      <div className={`relative w-full h-full min-h-[300px] rounded-xl overflow-hidden ${className}`}>
+        <LoadingSkeleton />
       </div>
     );
   }
@@ -408,15 +307,4 @@ export default function SmplMeshViewer({
       </div>
     </div>
   );
-}
-
-/**
- * Standalone viewer that handles its own data loading
- * @param {Object} props
- * @param {string} props.binUrl - URL to the .bin file
- */
-export function SmplMeshViewerWithLoader({ binUrl, ...props }) {
-  // This would use the hook - but we keep it simple here
-  // The parent component should use useSmplMeshLoader and pass vertices
-  return <SmplMeshViewer {...props} />;
 }

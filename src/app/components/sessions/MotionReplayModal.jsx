@@ -11,10 +11,47 @@ import {
   Eye,
   Loader2,
 } from "lucide-react";
-import MotionReplayPlayer from "../smpl/MotionReplayPlayer";
-import { useFrameFilenames, buildFrameUrls, detectStorageType } from "../../hooks/useSmplMeshLoader";
+import SkeletalAnimationViewer from "../smpl/SkeletalAnimationViewer";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+
+/**
+ * Parse GCS folder path to extract animation parameters
+ * Expected format: pose_data/{userId}/{sessionId}/{folder}/
+ * Animation files are named like: cam_1_track43_...animation.bin
+ */
+function parseAnimationPath(folderPath) {
+  if (!folderPath) return null;
+
+  // Remove trailing slash and split
+  const parts = folderPath.replace(/\/$/, "").split("/");
+
+  // Expected: ["pose_data", userId, sessionId, folder]
+  if (parts.length >= 4 && parts[0] === "pose_data") {
+    const folder = parts[3];
+    return {
+      userId: parts[1],
+      sessionId: parts[2],
+      folder: folder,
+      // The .bin filename is typically the folder name + ".bin"
+      filename: `${folder}.bin`,
+    };
+  }
+
+  // Fallback for smpl_data format: smpl_data/{userId}/{sessionId}/{folder}/
+  if (parts.length >= 4 && parts[0] === "smpl_data") {
+    const folder = parts[3];
+    return {
+      userId: parts[1],
+      sessionId: parts[2],
+      folder: folder,
+      filename: `${folder}.bin`,
+    };
+  }
+
+  console.warn("[parseAnimationPath] Unrecognized path format:", folderPath);
+  return null;
+}
 
 /**
  * Exercise selector dropdown
@@ -207,36 +244,19 @@ export default function MotionReplayModal({
   // Get current recording folder
   const currentFolder = currentExercise?.gcs_folders?.[selectedRecordingIndex];
 
-  // Fetch actual frame filenames from backend (more reliable than generating)
-  const { filenames: frameFiles, loading: filesLoading } = useFrameFilenames(
-    currentFolder?.path,
-    storageBaseUrl,
-    jwtToken
-  );
-
-  // Build frame URLs from actual filenames fetched from backend
-  // IMPORTANT: Never generate/guess filenames - always use actual filenames from useFrameFilenames
-  // Supports both smpl_data/ (legacy) and pose_data/ (new zip-based) storage formats
-  const frameUrls = useMemo(() => {
+  // Parse animation path for skeletal animation viewer
+  const animationParams = useMemo(() => {
     if (!currentFolder?.path) {
-      console.log("[MotionReplayModal] No folder path, returning empty URLs");
-      return [];
+      console.log("[MotionReplayModal] No folder path");
+      return null;
     }
 
-    if (frameFiles.length === 0) {
-      console.log("[MotionReplayModal] No frame files loaded yet, returning empty URLs");
-      return [];
+    const parsed = parseAnimationPath(currentFolder.path);
+    if (parsed) {
+      console.log("[MotionReplayModal] Parsed animation params:", parsed);
     }
-
-    const storageType = detectStorageType(currentFolder.path);
-    console.log("[MotionReplayModal] Storage type:", storageType);
-    console.log("[MotionReplayModal] Building URLs from", frameFiles.length, "actual filenames");
-    console.log("[MotionReplayModal] First filename:", frameFiles[0]);
-    console.log("[MotionReplayModal] Folder path:", currentFolder.path);
-
-    // Use the buildFrameUrls helper that handles both storage types
-    return buildFrameUrls(currentFolder.path, frameFiles, storageBaseUrl);
-  }, [currentFolder, frameFiles, storageBaseUrl]);
+    return parsed;
+  }, [currentFolder]);
 
   // Reset recording selection when exercise changes
   useEffect(() => {
@@ -390,23 +410,23 @@ export default function MotionReplayModal({
 
               {/* Right Panel - Player */}
               <div className="flex-1 bg-gray-50 p-5 flex flex-col overflow-hidden">
-                {frameUrls.length > 0 ? (
-                  <MotionReplayPlayer
-                    frameUrls={frameUrls}
-                    fps={24}
-                    autoPlay={false}
-                    loop={true}
-                    wireframe={viewMode === "wireframe"}
-                    meshColor="#10b981"
+                {animationParams ? (
+                  <SkeletalAnimationViewer
+                    userId={animationParams.userId}
+                    sessionId={animationParams.sessionId}
+                    filename={animationParams.filename}
+                    apiBaseUrl={storageBaseUrl}
                     jwtToken={jwtToken}
+                    modelPath="/models/mesh.glb"
+                    autoPlay={false}
                     className="flex-1 min-h-0"
                   />
-                ) : filesLoading || (exercisesWithMotion.length > 0 && currentFolder) ? (
+                ) : exercisesWithMotion.length > 0 && currentFolder ? (
                   <div className="flex-1 flex items-center justify-center">
                     <div className="text-center">
                       <Loader2 className="w-10 h-10 text-gray-300 animate-spin mx-auto mb-3" />
                       <p className="text-sm text-gray-500">
-                        {filesLoading ? "Loading frame files..." : "Preparing motion data..."}
+                        Preparing animation data...
                       </p>
                     </div>
                   </div>
